@@ -124,7 +124,8 @@ Blender saves preferences when you close it. If you turned
 4. Optional: in **Get Extensions**, the add-on's details show
    **Permissions**: Files. File access is its only permission. It reads level
    files and game textures, and it writes the export file you choose.
-   Importing never writes a file.
+   Importing a level never writes a file. **Import Other RIM / PNG / BMP**
+   can write loose RIM textures to the destination folder you explicitly choose.
 
 If **File > Import** also lists **Aliens vs Predator RIF (.rif)**, the old
 add-on is still installed. See [Upgrade](#upgrade).
@@ -557,7 +558,46 @@ Good to know:
 - The panel appears on every imported mesh. On anything that is not an
   ordinary module, the picker says
   **The RIM picker currently supports ordinary module polygons only**.
-- It offers only textures that the level already uses.
+- It offers the level's existing textures plus external textures registered
+  with **Import Other RIM / PNG / BMP**.
+
+### Add a RIM from another map, or a PNG/BMP
+
+1. Select an ordinary imported module. In either texture panel, click
+   **Import Other RIM / PNG / BMP**.
+2. Select the input file and explicitly choose **Destination game texture
+   folder**, the game-data folder containing `graphics` and/or `fastfile`.
+   The add-on never trusts a destination saved inside a `.blend`. Network
+   destinations additionally require **Allow network destination**.
+3. Confirm import. The result appears in both texture pickers; importing
+   alone does not assign it to any faces. Choose it on selected faces and
+   export normally.
+
+The add-on writes `graphics/<level>/<name>.rim` beneath the chosen folder.
+Existing files are protected unless **Overwrite texture file** is explicitly
+enabled. An existing loose RIM inside that folder's `graphics` tree is reused
+without rewriting it. Distribute the loose RIM with the exported level.
+
+PNG supports 8-bit, non-interlaced grayscale, RGB, indexed and alpha images.
+BMP supports uncompressed 8-, 24- and 32-bit Windows images with a 40-byte
+header; its reserved fourth byte is not treated as alpha. Inputs are limited
+to 16 MiB, 2048 pixels per side and 1,048,576 pixels; no more than 64 textures
+can be registered per level import. Malformed or unsupported images are
+refused with the filename and reason, without registering a texture.
+
+PNG/BMP becomes an 8-plane paletted RIM. Up to 256 colours are preserved;
+larger palettes are quantized to 216 colours with a warning. Only fully
+opaque or fully transparent pixels are supported, not partial alpha.
+Export adds the new bitmap names after saving supported geometry, UV and
+light edits. Re-import the saved RIF before further editing because adding
+bitmap names changes chunk offsets. Export refuses if a registered loose
+RIM has changed or disappeared.
+
+Folder authorization is session-only and is cleared whenever a `.blend` opens.
+For a saved level with pending custom textures, use **Authorize Texture Folder**
+in either texture panel and explicitly choose the trusted folder again before
+loading previews or exporting. Network folders require the separate network
+checkbox again. An unapproved saved path is rejected before filesystem access.
 
 ---
 

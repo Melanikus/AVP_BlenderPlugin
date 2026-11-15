@@ -425,6 +425,9 @@ def export_bytes(scene, text):
 def _export(scene, text, light_plan=None):
     """Returns the bytes and the module objects whose edits they hold (the ones that need their snapshot refreshed afterwards)."""
     original, tree, record = source_from_text(text)
+    def finish(data, objects):
+        from .texture_import import apply_bitmap_names
+        return apply_bitmap_names(text, data), objects
     source_scan = read_level(original)
     from .light_export import plan_lights
     if light_plan is None:
@@ -649,14 +652,14 @@ def _export(scene, text, light_plan=None):
         _check_scaled_bounds(decoded, header, position, scan.environment_scale)
         log.info("Centre export moved %s's origin by %s game units; the object's position and every vertex, the extents, the radius and "
                  "the stored centre moved with it; the shape stays where it was in the world", label, shift)
-        return decoded, edited_objects
+        return finish(decoded, edited_objects)
     if changes:
         header, placement = edited_geometry
         _check_scaled_bounds(decoded, header, placement.pos, scan.environment_scale)
         log.info("Vertex export changed %s vertex %s at byte %s: %s -> %s; derived normals/bounds updated; no size/offset fields changed", *changes[0])
-        return decoded, edited_objects
-    if uv_writes or texture_writes or additions or light_plan.changed:
-        return decoded, edited_objects
+        return finish(decoded, edited_objects)
+    if uv_writes or texture_writes or additions or light_plan.changed or record.get("custom_textures"):
+        return finish(decoded, edited_objects)
     encoded_file = record.get("compressed_file")
     if encoded_file is not None:
         raw_file = base64.b64decode("".join(encoded_file), validate=True)
@@ -786,11 +789,12 @@ class EXPORT_OT_avp_blender_plugin(bpy.types.Operator):
                 bpy.ops.object.mode_set(mode='OBJECT')
             from .light_export import plan_lights, finish_light_export
             light_plan = plan_lights(context.scene, text)
+            custom_textures = bool(source_from_text(text)[2].get("custom_textures"))
             data, edited = _export(context.scene, text, light_plan)
             backup, created = _write_level(target, data)
             # The file is saved: what was saved is now the starting point, so the next edit needs no re-import.
             refresh_warning = ""
-            if edited or light_plan.changed:
+            if edited or light_plan.changed or custom_textures:
                 from .export_refresh import refresh_after_export
                 try:
                     refresh_after_export(text, data, edited, light_plan=light_plan)
@@ -817,7 +821,8 @@ class EXPORT_OT_avp_blender_plugin(bpy.types.Operator):
         _report(self, {'WARNING' if refresh_warning else 'INFO'},
                 f"Saved {os.path.basename(target)}{backup_report}; module vertex, UV or texture export"
                 f"{'; light edits saved' if light_plan.changed else ''}"
-                f"{'; no exportable changes' if not edited and not light_plan.changed else ''}{refresh_warning}")
+                f"{'; custom texture names saved' if custom_textures else ''}"
+                f"{'; no exportable changes' if not edited and not light_plan.changed and not custom_textures else ''}{refresh_warning}")
         return {'FINISHED'}
 
 

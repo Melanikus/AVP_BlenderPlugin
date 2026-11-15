@@ -270,7 +270,23 @@ saved.
 - Several modules can change in one export. Blender's Undo reverses an
   assignment.
 - Not on shapes with animated textures.
-- Textures that the level does not already use are not supported.
+- To add a texture not in the map, use **Import Other RIM / PNG / BMP** in
+  either texture panel. Explicitly choose the destination game texture folder
+  in the file browser; a saved `.blend` cannot authorize a destination.
+  Network destinations also require **Allow network destination**.
+  After import, choose the new entry in either picker, then export.
+- Folder approval lasts only for the current session. After opening a saved
+  `.blend` with custom textures, use **Authorize Texture Folder** in either
+  panel before browsing or exporting them. Document paths alone never
+  authorize custom-texture reads.
+- External textures are stored under `graphics/<level>/<name>.rim`. Existing
+  files are never replaced unless **Overwrite texture file** is enabled.
+  A loose RIM already inside the chosen folder's `graphics` tree is reused.
+- PNG/BMP imports become paletted RIMs. More than 256 colours are quantized
+  with a warning; transparency must be fully opaque or fully transparent.
+  Inputs are capped at 16 MiB, 2048 pixels per side and 1,048,576 pixels.
+  After exporting new texture names, re-import the saved RIF before editing
+  further because its chunk layout has changed.
 
 ### 4. Add new faces to a module
 
@@ -373,9 +389,9 @@ These are shown but never written to a `.rif` file:
 - Door previews. **Base shape**, **Stored target** and **Play interpolation**
   only change what you see.
 - Everything from a legacy import (**Strict Level Import** off).
-- Textures. The texture picker only reuses textures that the level already
-  has. The texture pictures, the level's texture list, `MATCHIMG` and
-  `CLRLOOKP` are never changed.
+- Existing texture files, `MATCHIMG` and `CLRLOOKP`. Adding an external texture
+  writes its loose RIM and adds a bitmap name on export; it does not rewrite
+  texture archives or existing bitmap records.
 - Baked lighting and module data. The baked vertex colours (`SHPVTINT`) are
   not relit, and the module data (`MODULEDT`) is not changed.
 

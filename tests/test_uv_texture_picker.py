@@ -181,8 +181,9 @@ class UVTextureProof(unittest.TestCase):
                     return value
             picker.AVP_BLENDER_PLUGIN_PT_uv_textures.draw(
                 SimpleNamespace(layout=Layout()), bpy.context)
-            self.assertEqual(len(buttons), len(self.choices["items"]))
-            name, appearance, action = next(button for button in buttons if button[2].bitmap == self.bitmap)
+            picks = [button for button in buttons if button[0] == picker.AVP_BLENDER_PLUGIN_OT_uv_texture.bl_idname]
+            self.assertEqual(len(picks), len(self.choices["items"]))
+            name, appearance, action = next(button for button in picks if button[2].bitmap == self.bitmap)
             self.assertEqual(name, picker.AVP_BLENDER_PLUGIN_OT_uv_texture.bl_idname)
             self.assertIn("icon_value", appearance)
             self.assertTrue(appearance["text"])

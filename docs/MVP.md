@@ -48,7 +48,7 @@ legacy import is for viewing only.
 | Editing | Shapes with animated textures | Not supported yet | UV, texture and new-face edits refuse them; a single vertex move works. |
 | Editing | Moving, rotating or scaling objects | Not supported yet | Edit in Edit Mode; object changes block export. |
 | Editing | Adding or deleting objects | Not supported yet | New faces must go into an existing module. |
-| Editing | Textures the level does not already use | Not supported yet | The picker offers only the level's own textures. |
+| Editing | Textures the level does not already use | Editable and exported | Import Other RIM / PNG / BMP in either picker; explicitly select the destination folder. Export adds bitmap names; re-import afterward. |
 | Editing | Polygons without a texture | Not supported yet | They have no stored UVs, and the picker refuses them. |
 | Editing | Lights | Supported | Translate editor lights/markers or placed-light meshes/emitters; export AvP brightness/range/colour/flags/type/times and lighting-set ambience with other edits. Untouched bytes retained; rebake-required changes warn. Blender-only power is not source brightness. |
 | Editing | Markers | Not supported yet | Never written; moving one blocks export. |

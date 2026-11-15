@@ -243,6 +243,8 @@ class AVP_BLENDER_PLUGIN_PT_uv_textures(bpy.types.Panel):
         layout.prop(context.scene, "avp_blender_plugin_assign_image_dropdown")
         layout.prop(context.scene, "avp_blender_plugin_auto_repeat_image")
         layout.prop(context.scene, "avp_blender_plugin_follow_face_texture")
+        layout.operator("avp_blender_plugin.import_texture", icon='FILEBROWSER')
+        layout.operator("avp_blender_plugin.authorize_texture_root", icon='FILE_FOLDER')
         source = context.object.get("avp_blender_plugin_source_text")
         choices = _catalogues.get(source)
         if choices is None:
