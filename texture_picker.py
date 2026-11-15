@@ -17,7 +17,7 @@ from .raw_rif import source_from_text, walk_tree, reader_boundary
 from .session_log import report as _report
 from .utils import log
 from .vertex_export import (
-    _array_bytes, _uv_bytes, baseline_coordinates, coordinate_bytes, export_bytes, mesh_signature,
+    _array_bytes, _uv_bytes, baseline_coordinates, export_bytes, mesh_signature,
 )
 
 _catalogues = {}
@@ -144,20 +144,22 @@ def _expected_texture_state(obj, saved, edits):
     return slots, _array_bytes(coordinates)
 
 
-def verify_texture_mesh(obj, saved):
-    if coordinate_bytes(obj.data) != baseline_coordinates(saved, len(obj.data.vertices), obj.name):
-        raise ValueError("Export/re-import vertex movement before assigning a texture")
-    edits = obj.get("avp_blender_plugin_texture_edits", {})
+def _plain(edits):
+    return {key: value.to_dict() if hasattr(value, "to_dict") else dict(value) for key, value in dict(edits).items()}
+
+
+def texture_state(obj, saved):
+    """What a texture-picked object looks like before any UV move: (the picks, the UV bytes after the picks, the new image size of
+    each picked source polygon). The materials must be the picks' (nothing assigned by hand); UVs and vertices may have moved."""
+    edits = _plain(obj.get("avp_blender_plugin_texture_edits", {}))
     slots, coordinates = _expected_texture_state(obj, saved, edits)
-    if ([p.material_index for p in obj.data.polygons] != slots
-            or _uv_bytes(obj.data) != coordinates):
-        raise ValueError("Undo manual material/UV changes; export and re-import edit families separately")
-    return edits
+    if [p.material_index for p in obj.data.polygons] != slots:
+        raise ValueError("Undo manual material changes; change a polygon's texture only with the RIM picker")
+    return edits, coordinates, {key: tuple(value["size"]) for key, value in edits.items()}
 
 
 @reader_boundary("SHPPOLYS texture assignment")
-def update_texture_bytes(original, result, shape, obj, saved, record):
-    edits = verify_texture_mesh(obj, saved)
+def update_texture_bytes(original, result, shape, obj, edits):
     bitmaps = read_level(original).bmp_names
     nodes = [n for n in shape.children or () if n.identifier == b"SHPPOLYS"]
     if len(nodes) != 1:
@@ -209,7 +211,7 @@ def assign_texture(context, bitmap):
         previous = {}
     else:
         export_bytes(context.scene, text)
-        previous = verify_texture_mesh(obj, saved)
+        previous, previous_uv, previous_sizes = texture_state(obj, saved)
         selected = {saved["uv_mapping"][poly.loop_start * 5]
                     for poly in obj.data.polygons if poly.select}
     if not selected:
@@ -249,8 +251,7 @@ def assign_texture(context, bitmap):
             obj.data.polygons[index].material_index = slot
         obj.data.update()
         return len(selected)
-    edits = {key: value.to_dict() if hasattr(value, "to_dict") else dict(value)
-             for key, value in previous.items()}
+    edits = dict(previous)
     for index in selected:
         edits[str(index)] = {"bitmap": bitmap, "material": material.name,
                              "image": image.name, "size": list(image.size)}
@@ -260,7 +261,24 @@ def assign_texture(context, bitmap):
         if appended:
             obj.data.materials.pop(index=len(obj.data.materials) - 1)
         raise
-    values = array("f", (value for pair in struct.iter_unpack("<2f", coordinates) for value in pair))
+    # Only the picked polygons' UVs change. One that was not moved takes the exact pick-state value; one the mapper moved keeps its
+    # move, rescaled to the new image. Every other polygon's UVs (moved or not) are left alone.
+    mapping = saved["uv_mapping"]
+    before = list(struct.iter_unpack("<2f", previous_uv))
+    wanted = list(struct.iter_unpack("<2f", coordinates))
+    current = list(struct.iter_unpack("<2f", _uv_bytes(obj.data)))
+    flat = []
+    for loop, pair in enumerate(current):
+        polygon = mapping[loop * 5]
+        if polygon not in selected:
+            flat.extend(pair)
+        elif pair == before[loop]:
+            flat.extend(wanted[loop])
+        else:
+            old_width, old_height = previous_sizes.get(str(polygon)) or mapping[loop * 5 + 3:loop * 5 + 5]
+            new_width, new_height = edits[str(polygon)]["size"]
+            flat.extend((pair[0] * old_width / new_width, 1 - (1 - pair[1]) * old_height / new_height))
+    values = array("f", flat)
     for polygon, slot in zip(obj.data.polygons, slots):
         polygon.material_index = slot
     obj.data.uv_layers[0].data.foreach_set("uv", values)
@@ -298,7 +316,7 @@ class AVP_BLENDER_PLUGIN_OT_texture_picker(bpy.types.Operator):
     def draw(self, context):
         self.layout.template_icon_view(self, "bitmap", show_labels=True, scale=6)
         self.layout.label(text="Selected faces: whole source polygons; UV texels stay unchanged")
-        self.layout.label(text="Export/re-import before combining with vertex or UV edits")
+        self.layout.label(text="Vertex and UV moves can be exported together with this pick")
 
     def execute(self, context):
         restore = context.mode == 'EDIT_MESH'

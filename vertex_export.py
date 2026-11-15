@@ -122,10 +122,12 @@ def _texel(value, size, flip=False):
     return packed
 
 
-def _update_uvs(original, result, shape, obj, saved):
+def _update_uvs(original, result, shape, obj, saved, base=None, sizes=None):
+    """Write the moved UVs. `base` is the UV state the moves are measured from (the import's, or with texture picks the
+    pick-adjusted one); `sizes` gives the new image size of each picked source polygon, whose UVs are in that image's space."""
     mesh = obj.data
-    initial = baseline_coordinates(saved, len(mesh.loops), obj.name,
-                                   "uv_coordinates", 8)
+    initial = base if base is not None else baseline_coordinates(saved, len(mesh.loops), obj.name,
+                                                                 "uv_coordinates", 8)
     current = _uv_bytes(mesh)
     mapping = saved["uv_mapping"]
     if not isinstance(mapping, list) or len(mapping) != len(mesh.loops) * 5:
@@ -148,6 +150,8 @@ def _update_uvs(original, result, shape, obj, saved):
     for loop, (before, after) in enumerate(zip(struct.iter_unpack("<2f", initial),
                                               struct.iter_unpack("<2f", current))):
         polygon, index, corner, width, height = mapping[loop * 5:loop * 5 + 5]
+        if sizes and str(polygon) in sizes:
+            width, height = sizes[str(polygon)]
         key = index, corner
         if key not in offsets:
             if before != after:
@@ -305,9 +309,14 @@ def _update_derived_geometry(original, result, shape, moved_index, label):
              label, sorted(updated_normals), sorted(touched_vertices), outside)
 
 
-@reader_boundary("REBINFF2 export")
 def export_bytes(scene, text):
-    """Patch one module vertex or stored module UVs, never both together."""
+    """The bytes to save: one module vertex, stored module UVs and RIM texture picks (together, any of them), or new geometry on its own."""
+    return _export(scene, text)[0]
+
+
+@reader_boundary("REBINFF2 export")
+def _export(scene, text):
+    """Returns the bytes and the module objects whose edits they hold (the ones that need their snapshot refreshed afterwards)."""
     original, tree, record = source_from_text(text)
     source_scan = read_level(original)
     if read_edits(text):
@@ -368,6 +377,7 @@ def export_bytes(scene, text):
     texture_writes = 0
     edited_geometry = None
     additions = {}
+    edited_objects = []
     for offset, obj in objects.items():
         saved = placements[str(offset)]
         if not isinstance(saved, dict) or not {"signature", "matrix", "modifiers", "coordinates"} <= saved.keys():
@@ -380,12 +390,17 @@ def export_bytes(scene, text):
             validate_prefix(obj, saved)
         uv_changed = not growing and mesh_signature(obj.data) != saved["signature"]
         texture_changed = bool(obj.get("avp_blender_plugin_texture_edits"))
+        uv_base = uv_sizes = None
         if growing and texture_changed:
             raise ValueError("Export existing-polygon texture edits separately from new geometry")
         if texture_changed:
             if ("topology_signature" not in saved or mesh_signature(
                     obj.data, include_uv=False, include_material=False) != saved["topology_signature"]):
                 raise ValueError(f"{obj.name}: topology changed; re-import before assigning textures")
+            # A picked polygon's UVs are kept in its new texture's space, so a UV move is the difference to that state
+            from .texture_picker import texture_state
+            picks, uv_base, uv_sizes = texture_state(obj, saved)
+            uv_changed = _uv_bytes(obj.data) != uv_base
         elif uv_changed and ("uv_signature" not in saved
                            or mesh_signature(obj.data, include_uv=False) != saved["uv_signature"]):
             raise ValueError(f"{obj.name}: topology or material assignment changed; re-import before exporting")
@@ -399,8 +414,6 @@ def export_bytes(scene, text):
         current = coordinate_bytes(obj.data)
         if initial == current and not uv_changed and not texture_changed and not growing:
             continue
-        if (uv_changed or texture_changed) and initial != current:
-            raise ValueError("Export UV edits and vertex movement separately; undo one edit family first")
         if len(initial) != len(current) and not growing:
             raise ValueError(f"{obj.name}: vertex count changed")
         object_node = nodes[offset]
@@ -438,17 +451,19 @@ def export_bytes(scene, text):
                 raise ValueError("Export new geometry for one module at a time")
             additions = build_additions(original, shape, object_node, obj, saved,
                                         placement, scale, source_scan.environment_scale, text)
+            edited_objects.append(obj)   # new geometry changes the file's layout: the refresh refuses it and says to re-import
             continue
         if texture_changed or uv_changed:
             if any(n.identifier == b"TEXTANIM" for n in shape.children or ()):
                 raise ValueError(f"{obj.name}: animated textures are not supported")
+        if texture_changed or uv_changed or initial != current:
+            edited_objects.append(obj)
+        # A texture pick, UV moves and a vertex move each write their own bytes, so one export takes all of them.
         if texture_changed:
             from .texture_picker import update_texture_bytes
-            texture_writes += update_texture_bytes(original, result, shape, obj, saved, record)
-            continue
+            texture_writes += update_texture_bytes(original, result, shape, obj, picks)
         if uv_changed:
-            uv_writes += _update_uvs(original, result, shape, obj, saved)
-            continue
+            uv_writes += _update_uvs(original, result, shape, obj, saved, uv_base, uv_sizes)
         inverse_rotation = quat_to_mat(*placement.quat).inverted()
         for index, (before, after) in enumerate(zip(struct.iter_unpack("<3f", initial),
                                                   struct.iter_unpack("<3f", current))):
@@ -471,8 +486,8 @@ def export_bytes(scene, text):
             struct.pack_into("<3i", result, position, *new)
             _update_derived_geometry(original, result, shape, index, obj.name)
             edited_geometry = shape_headers[0], placement
-    if sum(bool(value) for value in (changes, uv_writes, texture_writes, additions)) > 1:
-        raise ValueError("Export vertex, UV, texture and new-geometry edits separately; undo one edit family first")
+    if additions and (changes or uv_writes or texture_writes):
+        raise ValueError("Export new geometry separately from vertex, UV and texture edits; undo one edit family first")
     from .raw_rif import replace_payloads
     decoded = replace_payloads(original, tree, additions) if additions else bytes(result)
     scan = read_level(decoded)
@@ -487,9 +502,9 @@ def export_bytes(scene, text):
                     or not -2147483648 <= (bound + placement.pos[i // 2]) * scan.environment_scale < 2147483648):
                 raise ValueError("The edited module's scaled local/world bounds exceed the game's signed range")
         log.info("Vertex export changed %s vertex %s at byte %s: %s -> %s; derived normals/bounds updated; no size/offset fields changed", *changes[0])
-        return decoded
+        return decoded, edited_objects
     if uv_writes or texture_writes or additions:
-        return decoded
+        return decoded, edited_objects
     encoded_file = record.get("compressed_file")
     if encoded_file is not None:
         raw_file = base64.b64decode("".join(encoded_file), validate=True)
@@ -498,8 +513,8 @@ def export_bytes(scene, text):
         from .rif_loader import load_rif_auto
         if load_rif_auto(raw_file) != original:
             raise ValueError("Preserved compressed file disagrees with decoded source")
-        return raw_file
-    return original
+        return raw_file, []
+    return original, []
 
 
 def suggested_export_path(source_path):
@@ -617,8 +632,17 @@ class EXPORT_OT_avp_blender_plugin(bpy.types.Operator):
             # UV RNA arrays are unavailable while Blender owns an edit mesh.
             if restore_edit_mode:
                 bpy.ops.object.mode_set(mode='OBJECT')
-            data = export_bytes(context.scene, text)
+            data, edited = _export(context.scene, text)
             backup, created = _write_level(target, data)
+            # The file is saved: what was saved is now the starting point, so the next edit needs no re-import.
+            refresh_warning = ""
+            if edited:
+                from .export_refresh import refresh_after_export
+                try:
+                    refresh_after_export(text, data, edited)
+                except (ValueError, RuntimeError, OSError, KeyError, IndexError, struct.error) as error:
+                    log.error("Snapshot refresh after export failed: %s", error)
+                    refresh_warning = f"; to keep editing, re-import the saved file ({error})"
         except (ValueError, RuntimeError, OSError, struct.error) as error:
             log.error("RIF export failed: %s: %s", self.filepath, error)
             _report(self, {'ERROR'}, f"{os.path.basename(self.filepath)}: {error}")
@@ -630,7 +654,8 @@ class EXPORT_OT_avp_blender_plugin(bpy.types.Operator):
         if backup is not None:
             action = "backup made" if created else "first backup kept"
             backup_report = f"; {action}: {os.path.basename(backup)}"
-        _report(self, {'INFO'}, f"Saved {os.path.basename(target)}{backup_report}; module vertex, UV or texture export")
+        _report(self, {'WARNING' if refresh_warning else 'INFO'},
+                f"Saved {os.path.basename(target)}{backup_report}; module vertex, UV or texture export{refresh_warning}")
         return {'FINISHED'}
 
 

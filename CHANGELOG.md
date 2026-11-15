@@ -13,6 +13,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   you, every warning and error the add-on logged, and the traceback of any operator that failed with an error nobody
   caught. Lines are cleaned of control characters, the file stops at 5 MB, a repeating message is written at 1, 10, 100, ...
   times, and the newest 20 session files are kept. The AvP Level Settings panel shows where the file is.
+- **One export takes a texture pick, UV moves and a vertex move together.** A RIM texture pick, UV moves on any polygon
+  (the picked ones included; they are kept in the new image's space) and a vertex move used to be refused as "export
+  separately". They write different bytes, so one export now takes all of them. Picking a texture after moving UVs keeps
+  the moves. New geometry is still exported on its own.
+
+### Fixed
+
+- **Editing goes on after a successful export, without a re-import.** An export compared the objects with a snapshot taken
+  at import, so the next edit of another kind was refused until the level was imported again. After a successful export the
+  snapshot is now taken again from what was saved (a vertex move, UV moves and texture picks). Exporting new geometry
+  still needs a re-import, and the export says so.
 
 ## [1.3.2] - 2026-10-26
 
