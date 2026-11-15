@@ -208,7 +208,7 @@ class LightExportProof(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "scaled range"):
                 _check_light_range(65536, 10737419, 200, label)
 
-    def test_nonfinite_conflicting_and_rotated_lights_refused(self):
+    def test_nonfinite_conflicting_lights_refused_and_rotation_skipped(self):
         self.std.location.x = float("nan")
         with self.assertRaisesRegex(ValueError, "finite"):
             self.decoded()
@@ -219,8 +219,9 @@ class LightExportProof(unittest.TestCase):
             self.decoded()
         self.reset()
         self.std.rotation_euler.z = 0.25
-        with self.assertRaisesRegex(ValueError, "rotation or scale"):
-            self.decoded()
+        plan = plan_lights(bpy.context.scene, self.text)
+        self.assertTrue(any(self.std.name in warning and "rotation or scale" in warning for warning in plan.skipped))
+        self.assertEqual(self.decoded(), self.raw)
 
     def test_placed_light_mesh_and_native_emitter_use_the_light_panel(self):
         from types import SimpleNamespace
@@ -241,10 +242,62 @@ class LightExportProof(unittest.TestCase):
         self.assertFalse(any("STDLIGHT" in warning and "rebake" in warning
                              for warning in plan_lights(bpy.context.scene, self.text).warnings))
 
-    def test_non_light_parameter_edits_still_refused(self):
+    def test_non_light_parameter_edits_skipped_and_retained_after_light_save(self):
         set_field(self.module, "duct", True)
-        with self.assertRaisesRegex(ValueError, "Only light parameter"):
-            self.decoded()
+        pending = read_edits(self.text).copy()
+        set_field(self.std, "brightness", 2)
+        plan = plan_lights(bpy.context.scene, self.text)
+        self.assertTrue(any(self.module.name in reason and "Air duct" in reason for reason in plan.skipped))
+        self.assertEqual(bpy.ops.export_scene.avp_blender_plugin(
+            filepath=str(PROOF / "light-with-pending-parameters.rif"), source_text=self.text.name), {'FINISHED'})
+        self.assertEqual(read_edits(self.text), pending)
+        refreshed = source_from_text(self.text)[0]
+        self.assertEqual(struct.unpack_from("<i", refreshed, self.std_node.offset + 64)[0], 2 * 65536)
+
+    def test_moved_module_modifier_and_light_plus_uv_save_without_adopting_skipped_state(self):
+        from unittest.mock import patch
+        from avp_blender_plugin import vertex_export
+        before_matrix = self.module.matrix_world.copy()
+        modifier = self.module.modifiers.new("unsupported-export-modifier", 'SOLIDIFY')
+        self.module.location.x += 2
+        original_saved = source_from_text(self.text)[2]["placements"][
+            str(self.module["avp_blender_plugin_object_chunk_offset"])]
+        position = list(struct.unpack_from("<3i", self.raw, self.std_node.offset + 16))
+        position[0] += 10
+        self.std.location.x += 10 * self.record["scale"]
+        mapping = self.module_saved["uv_mapping"]
+        key = mapping[1:3]
+        for index, entry in enumerate(self.module.data.uv_layers[0].data):
+            if mapping[index * 5 + 1:index * 5 + 3] == key:
+                entry.uv.x += 1 / mapping[index * 5 + 3]
+        reports = []
+        real_report = vertex_export._report
+        output = PROOF / "light-uv-skipped-module-transform.rif"
+        try:
+            with patch.object(vertex_export, "_report",
+                              side_effect=lambda op, level, message: (
+                                  reports.append((level, message)), real_report(op, level, message))[1]):
+                self.assertEqual(bpy.ops.export_scene.avp_blender_plugin(
+                    filepath=str(output), source_text=self.text.name), {'FINISHED'})
+            warnings = [message for level, message in reports if 'WARNING' in level and "Skipped edits:" in message]
+            self.assertEqual(len(warnings), 1)
+            self.assertIn(self.module.name, warnings[0])
+            self.assertIn("modifiers", warnings[0])
+            self.assertIn("transform", warnings[0])
+            saved = load_rif_auto(output.read_bytes())
+            self.assertEqual(struct.unpack_from("<3i", saved, self.std_node.offset + 16), tuple(position))
+            refreshed = source_from_text(self.text)[2]["placements"][
+                str(self.module["avp_blender_plugin_object_chunk_offset"])]
+            self.assertEqual(refreshed["matrix"], original_saved["matrix"])
+            self.assertEqual(refreshed["modifiers"], original_saved["modifiers"])
+            self.assertNotEqual(refreshed["uv_coordinates"], original_saved["uv_coordinates"])
+            recheck = plan_lights(bpy.context.scene, self.text)
+            self.assertEqual(vertex_export._export(bpy.context.scene, self.text, recheck)[0], saved)
+            self.assertTrue(any(self.module.name in reason and "transform" in reason
+                                for reason in recheck.skipped))
+        finally:
+            self.module.modifiers.remove(modifier)
+            self.module.matrix_world = before_matrix
 
     def test_one_export_carries_light_and_uv_then_editing_continues(self):
         set_field(self.placed, "runtime_brightness", 2)
@@ -284,6 +337,24 @@ class LightExportProof(unittest.TestCase):
         self.assertEqual(current_position(self.placed, saved, self.placed_node, self.record["scale"]),
                          (before[0] + 10, before[1], before[2]))
         self.assertEqual(self.decoded(), saved)
+
+    def test_moved_light_fixture_does_not_baseline_skipped_mesh_edits(self):
+        vertex = self.placed.data.vertices[0]
+        before_vertex = vertex.co.copy()
+        key = str(self.placed_node.offset)
+        before = source_from_text(self.text)[2]["placements"][key]
+        self.placed.location.x += 10 * self.record["scale"]
+        vertex.co.x += 1
+        try:
+            output = PROOF / "light-with-pending-fixture-geometry.rif"
+            self.assertEqual(bpy.ops.export_scene.avp_blender_plugin(
+                filepath=str(output), source_text=self.text.name), {'FINISHED'})
+            after = source_from_text(self.text)[2]["placements"][key]
+            self.assertEqual(after["coordinates"], before["coordinates"])
+            self.assertNotEqual(after["matrix"], before["matrix"])
+            self.assertNotEqual(vertex.co, before_vertex)
+        finally:
+            vertex.co = before_vertex
 
 
 class DerelictLightProof(unittest.TestCase):

@@ -31,7 +31,7 @@ legacy import is for viewing only.
 | Import | **Bitmap Mode** **HI12** | Not supported yet | The option has no effect in this version. |
 | Import | **Use MATCHIMG** and **Use CLRLOOKP** | Not supported yet | They work only in the legacy import. |
 | Panels | One AvP panel per object kind | Shown | 26 kinds, in the Object tab of the Properties editor. |
-| Panels | Non-light stored settings (doors, lifts, switches, fans, sounds and more) | Not supported yet | You can change them in the panel, but the change stays in the `.blend` and blocks export until you set it back. |
+| Panels | Non-light stored settings (doors, lifts, switches, fans, sounds and more) | Not supported yet | Stay pending in the `.blend`; export skips them with an object-named warning while saving supported edits. |
 | Panels | Information sections | Read-only | AI navigation, acoustics, track sounds, strategies, switch details, alternate locations, light cycles, lighting sets. |
 | Panels | Door shapes | Shown | Preview each stored shape and play a one-second-each-way preview; never exported. |
 | Editing | Move one vertex of a module | Editable and exported | One vertex per export; normals and stored size follow; baked colours stay. |

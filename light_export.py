@@ -3,6 +3,7 @@
 """Validated light-only writes and shared marker/fixture/emitter positions."""
 
 from dataclasses import dataclass
+import json
 import math
 import struct
 
@@ -30,6 +31,13 @@ class LightPlan:
     warnings: list
     objects: set
     scale: float
+    skipped: list
+    saved_edits: set
+    preserved_state: dict
+
+
+class UnsupportedLightTransform(ValueError):
+    pass
 
 
 def _position_record(raw, node):
@@ -69,23 +77,25 @@ def _check_light_range(brightness, distance, environment_scale, label):
 
 def _check_transform(obj, record, node, owners):
     if obj.constraints:
-        raise ValueError(f"{obj.name}: light constraints cannot be exported")
+        raise UnsupportedLightTransform(f"{obj.name}: light constraints/transform skipped")
     if obj.type == 'MESH':
         saved = record["placements"].get(str(node.offset))
         if saved is None or obj.parent is not None:
-            raise ValueError(f"{obj.name}: placed-light mesh has no unparented import baseline")
+            if saved is None:
+                raise ValueError(f"{obj.name}: placed-light mesh has no import baseline")
+            raise UnsupportedLightTransform(f"{obj.name}: changed light parenting skipped")
         before = _baseline_matrix(obj, record, node.offset)
         if obj.matrix_world.to_3x3() != before.to_3x3():
-            raise ValueError(f"{obj.name}: only light translation can be exported, not rotation or scale")
+            raise UnsupportedLightTransform(f"{obj.name}: only light translation can be exported, not rotation or scale")
     else:
         before = _baseline_matrix(obj, record, node.offset)
         if before is not None and obj.matrix_world.to_3x3() != before.to_3x3():
-            raise ValueError(f"{obj.name}: only light translation can be exported, not rotation or scale")
+            raise UnsupportedLightTransform(f"{obj.name}: only light translation can be exported, not rotation or scale")
         if before is None and obj.matrix_world.to_3x3() != Matrix.Identity(3):
-            raise ValueError(f"{obj.name}: only light translation can be exported, not rotation or scale")
+            raise UnsupportedLightTransform(f"{obj.name}: only light translation can be exported, not rotation or scale")
         expected_parent = owners[0] if obj.type == 'LIGHT' and owners else None
         if obj.parent != expected_parent:
-            raise ValueError(f"{obj.name}: light parent is not its imported fixture")
+            raise UnsupportedLightTransform(f"{obj.name}: light parent is not its imported fixture")
 
 
 def _baseline_matrix(obj, record, offset):
@@ -161,8 +171,11 @@ def plan_lights(scene, text, original=None, tree=None, record=None):
     sets = [node for node in nodes.values() if node.identifier == b"LIGHTSET"]
     allowed_ambience = {child.offset for node in sets for child in node.children or ()
                        if child.identifier == b"AMBIENCE"}
-    edits = read_edits(text)
-    for key in edits:
+    all_edits = read_edits(text)
+    # Validate even the unsupported edits; corrupt edit records are never a partial-export success.
+    edited_source(text, all_edits)
+    edits, skipped = {}, []
+    for key, value in all_edits.items():
         if not isinstance(key, str) or ":" not in key:
             raise ValueError("Invalid AvP edit key")
         offset, code = key.split(":", 1)
@@ -171,8 +184,14 @@ def plan_lights(scene, text, original=None, tree=None, record=None):
         offset = int(offset)
         if ((code in _LIGHT_CODES and offset in allowed | allowed_ambience)
                 or (code in _POSITION_CODES and offset in header_owners)):
+            edits[key] = value
             continue
-        raise ValueError("Only light parameter edits can accompany geometry, UV and texture export; undo other AvP parameter edits first")
+        owners = [obj.name for obj in scene.objects
+                  if obj.get("avp_blender_plugin_source_text") == text.name
+                  and any(nodes[start].offset <= offset < nodes[start].offset + nodes[start].size
+                          for start in (obj.get("avp_blender_plugin_object_chunk_offset"),
+                                        obj.get("avp_blender_plugin_data_chunk_offset")) if start in nodes)]
+        skipped.append(f"{', '.join(owners) or f'chunk {offset}'}: {FIELDS[code].name} is not exportable yet")
     result = bytearray(edited_source(text, edits))
     positions, moved_meshes, warnings, linked = {}, [], [], set()
     active = None
@@ -196,8 +215,15 @@ def plan_lights(scene, text, original=None, tree=None, record=None):
         before = struct.unpack_from("<3i", original, offset)
         staged = struct.unpack_from("<3i", result, offset)
         moves = set()
+        unsupported = False
         for obj in objects:
-            _check_transform(obj, record, node, owners)
+            try:
+                _check_transform(obj, record, node, owners)
+            except UnsupportedLightTransform as error:
+                skipped.append(str(error))
+                unsupported = True
+        # Source properties still export, without adopting rejected scene transforms.
+        for obj in (() if unsupported else objects):
             if obj.matrix_world.translation != _initial_location(obj, original, node, record):
                 position = current_position(obj, original, node, scale, record)
                 if position == before:
@@ -241,13 +267,19 @@ def plan_lights(scene, text, original=None, tree=None, record=None):
                 warnings.append(f"PLOBJLIT {target.offset}: local flags are stored but not consumed by the audited runtime light setup")
             if result[target.offset + 16:target.offset + 20] != original[target.offset + 16:target.offset + 20]:
                 warnings.append(f"PLOBJLIT {target.offset}: spread is stored; the audited game setup does not build a spotlight cone")
-    return LightPlan(bytes(result), bytes(result) != original, positions, moved_meshes, warnings, linked, scale)
+    return LightPlan(bytes(result), bytes(result) != original, positions, moved_meshes, warnings, linked, scale,
+                     skipped, set(edits), {})
 
 
-def finish_light_export(text):
+def finish_light_export(text, saved_edits):
     name = text.get("avp_blender_plugin_edits_text")
     if name is not None:
         edits = bpy.data.texts.get(name)
+        remaining = {key: value for key, value in read_edits(text).items() if key not in saved_edits}
+        if remaining:
+            edits.clear()
+            edits.write(json.dumps(remaining, sort_keys=True))
+            return
         del text["avp_blender_plugin_edits_text"]
         if edits is not None and edits.get("avp_blender_plugin_source_text") == text.name:
             bpy.data.texts.remove(edits)

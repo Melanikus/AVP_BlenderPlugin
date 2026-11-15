@@ -73,11 +73,19 @@ def refresh_after_export(text, data, objects, light_plan=None):
         for obj in light_plan.positions:
             if obj.type != 'MESH':
                 obj["avp_blender_plugin_light_matrix"] = [value for row in obj.matrix_world for value in row]
+        for obj in light_plan.moved_meshes:
+            placements[str(obj["avp_blender_plugin_object_chunk_offset"])]["matrix"] = [
+                value for row in obj.matrix_world for value in row]
     for obj, mapping in mappings.items():
         obj.data[_MAPPING] = mapping
         if _PICKS in obj:
             del obj[_PICKS]
-        placements[str(obj["avp_blender_plugin_object_chunk_offset"])] = baseline(obj)
+        key = str(obj["avp_blender_plugin_object_chunk_offset"])
+        previous = placements[key]
+        fresh = baseline(obj)
+        for field in light_plan.preserved_state.get(obj, ()) if light_plan is not None else ():
+            fresh[field] = previous[field]
+        placements[key] = fresh
     content = json.dumps(record, indent=0)
     if len(content) > MAX_TEXT_BYTES:
         raise ValueError("the preserved source record would exceed its size bound")

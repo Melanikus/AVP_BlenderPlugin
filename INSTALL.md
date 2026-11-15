@@ -372,7 +372,7 @@ for this object can't be read. Re-import the level.
 - Light settings in **AvP Editor / Prelight** and **AvP Placed Light Object**
   are saved by export, including colour, range, flags, type, timing and
   lighting-set ambience. Non-light settings remain staged in the `.blend`
-  file only and still block export until reset.
+  file only; export skips them with a warning naming the object and setting.
 - Move a light, its marker, a placed-light mesh or its child emitter in
   Object Mode to export its translation. Game units are whole integers,
   with the level's environment scale applied. Rotation, scale, changed
@@ -661,6 +661,15 @@ Rules:
 ---
 
 ## Export
+
+Export saves supported edits and lists unsupported edits in one warning,
+with each object's name and the reason. The same warning is in the session
+log. For example, light moves and UV changes are saved even when another
+object was moved or a modifier added. Unsupported transforms and modifiers
+are not adopted into the saved baseline; pending panel and mesh edits remain
+pending after export. If no exportable edit remains, the report says so.
+Corrupt preserved sources and invalid game values still refuse the export
+without changing the output file.
 
 1. Select any object of the level. (If the scene holds only one imported
    level, that level is used.)

@@ -206,7 +206,8 @@ saved.
 - Don't delete or duplicate imported meshes, and don't add new objects to the
   level's collection.
 - Don't change material slots by hand. Use the texture picker.
-- Non-light panel settings still block export. Light settings are exported.
+- Non-light panel settings are skipped with a named warning and remain
+  pending. Light settings are exported.
 - Don't move non-light **Editable Game Objects** markers.
 - After a door preview, click **Base shape** before you export.
 - Each export compares the scene with the last saved state of the level: the
@@ -340,7 +341,9 @@ log as well as Blender's reports.
 - If the file already exists, it is first copied to `<file>.bak`. This happens
   only once: an existing `.bak` file is never replaced.
 - The add-on writes a temporary file in the same folder and then swaps it in.
-  A refused export changes no file.
+  Invalid source data or invalid game values still refuse without changing
+  any file. Unsupported edits are skipped with one warning naming each
+  object and reason; supported edits are saved.
 - Data that your edit does not touch is kept byte for byte. An edit also
   updates what depends on it: normals, the shape's stored size and counts, and
   the sizes of the chunks that hold it.
@@ -356,9 +359,9 @@ log as well as Blender's reports.
 
 These are shown but never written to a `.rif` file:
 
-- Non-light panel settings, such as **Door starts locked**, stay in the
-  `.blend` file only and still block export. Setting the value back clears
-  it. Light panels explicitly say that their light edits export.
+- Non-light panel settings, such as **Door starts locked**, stay pending in
+  the `.blend` file and are listed as skipped during export. Setting the
+  value back clears it. Light panels say that their light edits export.
 - Information sections in the panels, for example
   **AI navigation (read only)**, **Stored module acoustics (read only)**,
   **Stored track sounds (read only)**,
@@ -366,8 +369,7 @@ These are shown but never written to a `.rif` file:
   **Generator / NPC source (read only)**.
 - Blender-only light settings, including approximate power and light type.
   Translation and the AvP light panel's source settings export instead.
-- Markers. **Editable Game Objects** markers are never written, and moving
-  one blocks export.
+- Non-light markers. Their moves are skipped and named in the export warning.
 - Door previews. **Base shape**, **Stored target** and **Play interpolation**
   only change what you see.
 - Everything from a legacy import (**Strict Level Import** off).
