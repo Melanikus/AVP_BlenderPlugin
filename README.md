@@ -1,247 +1,454 @@
 # AVP_BlenderPlugin
 
+AVP_BlenderPlugin is a Blender add-on for Aliens versus Predator (1999,
+Rebellion). It opens the game's level files (`.rif`) in Blender, with their
+textures and lights. It shows the game data that the level stores for every
+object. It can also save a few kinds of edits to a level's modules into a new
+`.rif` file.
+
 AVP_BlenderPlugin is a fork of AdiJager's BlendRIF, licensed under
-GPL-3.0-or-later; AdiJager's copyright and original credit are retained.
-It imports models, levels, characters, textures and
-animations from **Aliens vs Predator (1999, Rebellion)** into a
-Blender scene. Materials are set up for Eevee by default.
+GPL-3.0-or-later. AdiJager's copyright and original credit are kept.
 
-tested on Blender 5.2
+This page describes version 1.0.0-alpha.1. It needs Blender 5.2.0 or newer.
 
-![Meat Factory level imported into Blender](docs/rif_geometry.jpg)
+![The Meat Factory level imported into Blender](docs/rif_geometry.jpg)
+
+Contents: [What it does](#what-it-does) ·
+[Requirements](#requirements) · [Install](#install) ·
+[Quick start](#quick-start) · [What it shows](#what-it-shows) ·
+[What you can edit and export](#what-you-can-edit-and-export) ·
+[What is read-only](#what-is-read-only) · [Known limits](#known-limits) ·
+[Check your download](#check-your-download) ·
+[Reporting problems](#reporting-problems) · [Credits](#credits) ·
+[Licence](#licence)
+
+More pages:
+
+- [Install and use](INSTALL.md): installing, every option, every panel,
+  upgrading, removing and troubleshooting, step by step.
+- [Feature status](docs/MVP.md): every feature and its status in one table.
+
+Words in **bold** are the words you see on the screen.
 
 ---
 
-## Features
+## What it does
 
-- **Geometry** — static meshes with UVs, per-shape materials, and
-  correct pivots.
-- **Local NEXT module edits** — append a box/ramp in Edit Mode to an
-  existing ordinary module, choose an existing RIM, and export its
-  vertices/faces/UVs/normals/bounds. Original geometry stays intact.
-  Unsupported auxiliary/animated/shared shapes refuse; new baked colours
-  copy the nearest authored vertex, rather than rebaking lighting.
-- **Textures** — loaded from the game's archives, with palette
-  tinting for untextured polygons.
-- **Lighting** — point and spot lights placed per level.
-- **Level animations** — doors, lifts, moving platforms, rotating
-  fans.
-- **Character animations** — rigged armatures with per-sequence NLA
-  tracks.
-- **Level data** — spawn points, camera origins, AI paths, waypoints,
-  sound emitters, and other markers.
-- **Morph targets** — optional (off by default) import of the alternate
-  geometry the game blends morphing doors and hatches to.
+- It imports levels. Every placed object becomes a mesh with the game's
+  textures. The level's lights become Blender lights.
+- It shows the game data. Select an object, and its AvP panel lists what the
+  level stores for it: door, lift, switch, light, sound and generator
+  settings, AI navigation, and more.
+- It exports a few edits. On a level module you can move one vertex, change
+  UVs, give faces another texture that the level already uses, move the
+  module's centre, or add new faces. The add-on writes these edits into a new
+  `.rif` file, and you can go on editing after a successful export.
+- It keeps some older viewing tools. With **Strict Level Import** turned off,
+  it also imports markers, AI paths, waypoints, level animations and
+  character animations. These are for viewing only.
+
+A *module* is one of the pieces a level is built from, as opposed to doors,
+lifts, lights and other placed objects.
 
 ---
 
 ## Requirements
 
-- **Blender 5.2 or newer.**
-- **Aliens vs Predator (1999) game files** with the `shape_rifs/`
-  directory from the *AvP Editing Tools* package placed next to the
-  other game asset folders. The importer needs it to resolve external
-  shape references used by many levels.
-- **A `fastfile/` directory** (part of the standard game install) if
-  you want textures to be extracted from the FFL archives.
-
-The importer locates these folders automatically by scanning
-directories near the `.RIF` file you open, so keeping them in the
-game's default layout is enough — no manual path configuration is
-required.
-
----
-
-## Installation
-
-### Blender 5.2+ (Extensions platform)
-
-The local release candidate is `avp_blender_plugin-next.zip`, with
-extension id `avp_blender_plugin`. No online listing or published release
-is claimed. Follow [INSTALL.md](INSTALL.md) after its package gate passes.
-
-Version 1.3.74 includes 1.3.73's ordinary texture-corner correction:
-finite stored texels within +/-16,777,216, with untouched large tiling
-coordinates preserved. Earlier 1.3.72 refuses corners past +/-16383.
-Animated texture writes remain unsupported. Release builds check every
-tracked file and ZIP member for private local-path markers; internal
-development notes are not published.
-
-### Blender 5.2+ (manual ZIP)
-
-1. Use the locally proved `avp_blender_plugin-next.zip`; the future release
-   repository is [AVP_BlenderPlugin](https://github.com/Melanikus/AVP_BlenderPlugin).
-2. Open **Edit → Preferences → Add-ons**.
-3. Click **Install from Disk…** and select the ZIP.
-4. Enable the checkbox next to **AVP_BlenderPlugin**.
-
-If you are upgrading from an earlier version, remove the old add-on
-first and restart Blender — reinstalling the ZIP alone is not enough
-because Blender keeps the previous module in memory until restart.
+- Blender 5.2.0 or newer.
+- Your own copy of the game's data files:
+  - the level `.rif` files you want to open;
+  - the game's `fastfile` folder (the texture archives, `.ffl` files) or a
+    `graphics` folder with loose texture files. You need one of them while
+    **Import Materials** is on, which is the default. The add-on looks for a
+    folder named `fastfile` or `graphics` in the level's folder and in up to
+    four folders above it. You can also choose the folder yourself with the
+    **Game Data** option.
+  - optional: a `shape_rifs` folder. Some levels borrow shapes from other
+    `.rif` files. The add-on looks for a `shape_rifs` folder inside the
+    level's folder or inside one of the four folders above it. It also looks
+    for borrowed shapes in the level's own folder. When a borrowed shape is
+    not found, the level's own stand-in shape is used.
+- Nothing else. The add-on uses only Blender's own Python. It needs no
+  internet connection.
 
 ---
 
-## Usage
+## Install
 
-1. **File → Import → AVP_BlenderPlugin RIF (.rif)**.
-2. Pick a `.RIF` file. The importer locates the game's asset folders
-   automatically from directories near the file.
-3. Pick a preset or tweak the options (see below).
-4. Click **Import**.
+The short version:
 
-Imported objects land in a `<filename>_<tag>` collection tree
-(`geometry`, `empties`, `lights`, `animations`, optionally
-`missing_ext`), so different imports stay separated.
+1. Download `avp_blender_plugin-1.0.0-alpha.1.zip` from the
+   [Releases page](https://github.com/Melanikus/AVP_BlenderPlugin/releases).
+   Do not unzip it.
+2. In Blender, open **Edit > Preferences...** and then the **Add-ons**
+   section. Open the drop-down menu at the right end of its header, choose
+   **Install from Disk...**, and pick the zip.
+3. Check that **AVP_BlenderPlugin** is ticked in the list.
 
-For character animations, the default sequence is unmuted on every
-bone — switch between sequences in the NLA editor to preview the rest.
-
-### Options
-
-**Preset** — a quick configuration bundle. **Default** imports
-everything; **Fast** imports geometry only; **Debug** disables
-smoothing and pivot fixes and marks unresolved references. Presets
-overwrite the individual settings below; you can still tweak them
-afterwards.
-
-**Geometry**
-- **Scale World** — global scale for the imported scene. The default
-  `0.001` gives a near-real-world size.
-- **Pivot Mode** — whether to recenter object pivots. `Rotated only`
-  recenters just the rotated ones; `None` keeps them as stored;
-  `All` recenters everything (debug).
-- **External RIF** — how to pick between a placeholder shape and a
-  shape from an external RIF when both are available. `Auto` picks
-  the one with more vertices; `Prefer ext` / `Prefer placeholder`
-  force a side.
-- **Orphan Shapes** — what to do with shapes the game does not
-  render. `Skip` matches the game; `Keep at origin` and `Infer` are
-  for debugging.
-- **Auto Smooth** — apply smooth shading to imported meshes with the
-  given hard-edge angle.
-
-**Materials**
-- **Import Materials** — master toggle for all texture and material
-  work. Turn off for a fast geometry-only pass.
-- **Bitmap Mode** — choose between the low-res (`LO12`) and
-  high-res (`HI12`) texture set.
-- **Use MATCHIMG** — apply the game's built-in texture substitution
-  rules.
-- **Use CLRLOOKP** — use the game's color palette to tint polygons
-  that have no texture. Without this they fall back to magenta.
-- **Backface Culling** — match the game's renderer, which hides
-  designer geometry that is invisible in-game. Turn off to inspect
-  that geometry in Blender.
-Textures are read directly from local RIM files or the game's FFL
-archives into packed Blender images; no disk extraction is needed.
-
-Textures are resolved by the path stored in the RIF, so two textures
-that share a file name (the game reuses `lights.rim` and friends across
-levels) stay distinct; materials are named after that path
-(`Stat101_Common_Lights`) and record it in `avp_blender_plugin_tex_path`. The import
-summary reports how many references resolved by path, by a unique file
-name, ambiguously, or not at all.
-
-**Data** — one toggle per data type: attachment points, placed-
-object hierarchy, dynamic spawn points, sound emitters, player
-starts, camera origins, AI patrol paths, waypoints, morph targets and
-lights. A patrol path is imported as a curve through the world
-positions of the AI modules it names (a path is a list of modules,
-not of coordinates), with the module indices and point flags kept as
-`avp_*` properties.
-**Import Waypoints** is off by default: it adds the Alien AI
-navigation volumes of a level, one cube empty per volume, sized to
-the volume and carrying its links to neighbouring volumes as
-`avp_wp_link_*` properties. A level holds hundreds of them, so they
-are opt-in.
-**Import Morph** is off by default too: it adds the morph-target
-geometry of shapes that morph (doors, hatches, the xenoborg room),
-placed like the parent shape and grouped in a dedicated
-`<level>_Morphs` collection so they stay apart from the level
-geometry.
-
-**Animation**
-- **Animate Level Tracks** — animated objects as NLA strips.
-- **FPS** — animation playback rate. The default `60` matches the
-  game's native tick.
-- **Animate Characters** — bake character animation sequences as NLA
-  tracks per bone.
-- **Sequences per Bone** — cap how many sequences are baked per
-  bone. `0` bakes everything, which can produce hundreds of tracks
-  on large characters.
-
-**Debug**
-- **Diagnostic Mode** — parse and log the file without creating any
-  Blender data.
-- **Mark Missing SHPEXTFL** — drop an Empty at every external
-  reference that could not be resolved, so you can see where it was
-  in-game.
-
-### Example: importing a level
-
-    File > Import > Aliens vs Predator RIF (.rif)
-      -> D:\...\Aliens versus Predator Classic\avp_rifs\Lockdown4.RIF
-    Preset: Default
-    Import
-
-Result: geometry collection, marker empties, lights, NLA tracks for
-moving objects, textures loaded from the game's FFL archives
-(extracted on the first import, reused afterwards).
-
-![Corridor level with lights and textures](docs/rif_lighting.jpg)
-
-### Example: importing a character
-
-    File > Import > Aliens vs Predator RIF (.rif)
-      -> D:\...\Aliens versus Predator Classic\avp_huds\hnpc_civvie.RIF
-    Preset: Default
-    Import
-
-Result: an armature with the full bone hierarchy, meshes bound to
-it, and NLA tracks per animation sequence. The default sequence is
-unmuted on every bone; other sequences can be previewed via the NLA
-editor.
-
-![Character import with per-sequence NLA tracks](docs/rif_charanim.png)
+[INSTALL.md](INSTALL.md) has every step with what you should see, how to
+check the download, how to upgrade from older versions, and how to remove the
+add-on.
 
 ---
 
-## Limitations
+## Quick start
 
-- **Import only.** There is no export back to `.RIF`.
-- **Character animations are baked.** The NLA tracks are independent
-  of a source action; editing them by hand is possible but not
-  supported.
-- **Not imported:** fragment systems, animated UVs, module
-  streaming, vertex tint, morph targets, and sprites.
-- **Tested on Blender 4.2 – 5.2.** Older versions may work but are
-  untested.
+1. Import a level. Choose **File > Import > AVP_BlenderPlugin RIF (.rif)**.
+   Pick a level `.rif` from your game files. Keep the default options and
+   import it.
+   - You should see the level with its textures. Blender reports a line that
+     starts with **Objects:** and the line **Textures visible: switched the
+     3D view to Material Preview**.
+   - In the Outliner, a new collection is named after the file. It holds
+     `<file>_Geometry` (the meshes) and `<file>_Lights` (the lights).
+2. Look around. Click an object, then open the Object tab of the
+   Properties editor. Its AvP panel shows what the level stores for it. A
+   level module shows the panel **AvP Module**.
+3. Make an edit. Select a module, switch to Edit Mode and select a few
+   faces. In the panel **AvP Existing RIM Textures**, click
+   **Choose Existing RIM Texture**. Pick one of the level's textures and
+   confirm. (RIM is the game's texture format.)
+   - You should see **Assigned level bitmap `<number>` to `<count>` source
+     polygon(s)**, and the faces show the new texture.
+4. Export. Click **Export level (geometry / textures)** at the bottom of
+   the panel. The file browser suggests `<level>-edit.rif` in the same folder
+   as the original. Confirm.
+   - You should see **Saved `<level>-edit.rif`; module vertex, UV or texture
+     export**.
+5. Check it. Import the new file and look at your change. If you saved it
+   outside your game folders, set **Game Data** to your game folder when you
+   import it.
+6. Trying it in the game. This version does not yet confirm that the game
+   loads edited files. If you try one in the game, work on a copy of your
+   game files and keep your original `.rif` files.
+
+New to Blender? The [Blender 5.2 manual](https://docs.blender.org/manual/en/5.2/)
+explains the Outliner, the Properties editor, Edit Mode and how to select
+faces.
 
 ---
 
-## Diagnostic tools
+## What it shows
 
-The legacy ZIP ships a `tools/` folder with standalone dump scripts
-(`dump_chunks.py`, `dump_char_chunks.py`). They are meant to be pasted
-into Blender's Scripting workspace and run there — useful when
-inspecting unfamiliar RIF files or debugging an import. They are
-never imported by the add-on itself and have no effect on startup
-cost or behaviour.
+### With the default import (Strict Level Import on)
+
+- Level geometry: one mesh for every placed object, in the collection
+  `<file>_Geometry`. Four-sided polygons become two triangles.
+- Textures: read from the game's archives or `graphics` folder, decoded in
+  memory and packed into the `.blend` file. No image files are written.
+  Polygons that have no texture are magenta.
+- Lights: Blender point lights for the level's first `NORMALLT` light set
+  and for its placed lights, in `<file>_Lights`. Their power is approximate.
+  A placed light is named `<lamp mesh> Emitter` and is attached to its lamp
+  mesh. With **Animate Placed Lights**, placed lights strobe or flicker when
+  you play the timeline. The flicker repeats the same way every time; it is
+  not the game's own random sequence.
+- Game markers (optional): with **Editable Game Objects**, the import adds
+  markers for generators, prelights, sounds, power cables, particle
+  generators, player starts and placed hierarchies. It also adds boxes or
+  markers for area switches, damage volumes, countdowns, messages, objectives
+  and switches. Select a marker to see its panel.
+- AvP panels: in the Object tab of the Properties editor, one panel for
+  the selected object's kind, for example **AvP Module**, **AvP Door**,
+  **AvP Lift** or **AvP Runtime Light**. There are 26 kinds. Each panel lists
+  the stored settings and information. See
+  [The AvP panels](INSTALL.md#the-avp-panels).
+- Door shapes: in **AvP Door**, you can show a door's stored shapes and
+  play a preview that moves it one second each way.
+
+### With Strict Level Import off (legacy import, for viewing only)
+
+- Markers (empties) for `DUMMYOBJ` reference points, `PLACHIER` hierarchies,
+  `AVPGENER` generators, `SOUNDOB2` sound emitters, `AVPSTART` player starts
+  and `CAMORIGN` camera origins.
+- `AVPPATH2` AI patrol paths, as curves.
+- The Alien AI navigation volumes (**Import Waypoints**, off by default), as
+  cube markers.
+- Morph targets, the alternate shapes of morphing doors and hatches
+  (**Import Morph**, off by default), as separate meshes.
+- Point and spot lights from the level's light sets.
+- Level-track animations (doors, lifts, fans, moving platforms), as NLA strips
+  on markers.
+- Character files: each bone is a mesh, linked to its parent bone, with the
+  animation sequences baked into NLA tracks.
+
+A legacy import keeps no copy of the level. So the AvP panels, the texture
+picker and export do not work on it.
+
+---
+
+## What you can edit and export
+
+Only the edits below reach a `.rif` file. Everything else is shown but not
+saved.
+
+### Rules for every edit
+
+- The level was imported with **Strict Level Import** on.
+- Only ordinary level modules can be edited: objects whose Object tab shows
+  **AvP Module**. Doors, lifts, switches, fans, lights, scenery and other
+  placed objects can't be exported.
+- The module's shape must belong to that one object. A shape that other
+  objects also use is refused.
+- Shapes that come from another `.rif` (`SHPEXTFL`), morphing shapes
+  (`SHPMORPH`) and animated shapes (`ANIMSEQU`) are refused.
+- A vertex move, UV moves and texture picks can go out in one export. New
+  faces, and a moved centre, are each exported on their own.
+- Make your changes in Edit Mode. Don't move, rotate or scale the imported
+  objects. (The one exception is moving an object's origin to move its
+  centre. See section 5.)
+- Don't add, remove or rename modifiers, and don't add shape keys.
+- Don't delete or duplicate imported meshes, and don't add new objects to the
+  level's collection.
+- Don't change material slots by hand. Use the texture picker.
+- Set every panel setting back to its original value. Changed panel settings
+  block export.
+- Don't move the **Editable Game Objects** markers.
+- After a door preview, click **Base shape** before you export.
+- Each export compares the scene with the last saved state of the level: the
+  import, or your last successful export. After a successful export you can go
+  on editing and export again, without importing. The one exception is new
+  faces: the export tells you to import the saved file before you edit
+  further.
+
+### 1. Move one vertex
+
+- Exactly one moved vertex in the whole level per export. The vertex must
+  belong to a face.
+- The move is rounded to whole game units. A move too small to change a whole
+  game unit is refused.
+- The new position must stay within ±16,777,216 game units. The shape must
+  also still fit the game's number range after the level's own scale.
+- The normals of the faces that use the vertex, and of their corners, are
+  worked out again. All other normals stay as they were.
+- The shape's stored size grows to include the new point. It never shrinks,
+  and the shape's stored centre does not move.
+- Baked lighting (the vertex colours) stays as it was: the moved point keeps
+  its old colour.
+- A face that collapses completely is refused. Shapes whose stored normals
+  are shared between faces, or don't match the geometry, are refused.
+- Animated textures don't block this kind of edit.
+
+### 2. Change UVs
+
+- Only the stored UV coordinates change.
+- UVs are rounded to whole texels of each polygon's texture. Each value must
+  stay within ±16,777,216 texels.
+- Import the level with **Import Materials** on. Without it, every texture is
+  taken as 128 × 128 texels.
+- Blender corners that share one stored corner must get the same change. For
+  example: both triangles of a four-sided polygon, or polygons that share a UV
+  list.
+- Polygons without a texture have no stored UVs, so their UVs can't change.
+- Keep the mesh's single UV layer, **UVMap**.
+- Several modules can change in one export.
+- Not on shapes with animated textures (`TEXTANIM`).
+
+### 3. Give faces another texture from the level
+
+- Select faces in Edit Mode, then use **Choose Existing RIM Texture** to give
+  them a texture that the level already uses.
+- Whole game polygons change: picking one triangle of a four-sided polygon
+  changes both triangles.
+- Only polygons that already have a texture.
+- Only the texture number changes. The UVs keep their texel values, unless you
+  move them.
+- The UVs of a picked polygon are kept in its new texture's size. You can move
+  them after the pick, or pick after you moved them: the move is kept and
+  exported together with the pick.
+- The level must have been imported with **Import Materials** on and its game
+  data found.
+- Several modules can change in one export. Blender's Undo reverses an
+  assignment.
+- Not on shapes with animated textures.
+- Textures that the level does not already use are not supported.
+
+### 4. Add new faces to a module
+
+- In Edit Mode, add new vertices and faces to an existing module, for example
+  a box or a ramp.
+- New faces may use only new vertices: don't join them to the existing
+  geometry. Each new face has 3 or 4 corners, and every new vertex must belong
+  to a new face.
+- Leave every existing vertex, face, UV and material as it was.
+- Give the new faces a level texture: select only the new faces and use
+  **Choose Existing RIM Texture**. A new face may also use one of the
+  module's own material slots, if that slot stands for a single texture.
+- One module per export, with no other kind of edit.
+- The module can hold at most 1,698 polygons and 10,000 vertices in total.
+- New positions must stay within ±16,777,216 game units.
+- The module's shape may hold only plain geometry data. A shape with anything
+  more, such as animated textures, is refused.
+- New vertices get the baked colour of the nearest existing vertex. This is an
+  approximation, not new lighting.
+- A new face as a separate object is refused. Add it to the module in Edit
+  Mode.
+
+### 5. Move a module's centre (Recentre Shape)
+
+This is the old level editor's Shape > Recentre Shape.
+
+- In the panel **AvP Module**, **Recentre shape: origin to the** has the
+  buttons **Bottom**, **Middle** and **Top**. Each moves the object's origin
+  over the middle of the module's box, at its lowest point, its middle height
+  or its highest point. The shape stays where it is. You can also move the
+  origin yourself, for example with **Object > Set Origin**, so long as the mesh
+  stays where it was.
+- The export writes the new centre. The object's position in the level becomes
+  the new origin, rounded to whole game units. Every vertex, the shape's stored
+  size and radius and its stored centre move the other way. Nothing moves in
+  the level.
+- Only a module that is not rotated in the level. A rotated one is refused.
+- The object's rotation and scale must not change, and the mesh must have moved
+  exactly the opposite way to the origin. A moved object is refused.
+- One module per export, with no other kind of edit.
+- A new centre at the same game point as the old one is refused.
+- The buttons don't work on an object that has a parent or constraints, or
+  whose mesh is shared with another object, or while it is in Edit Mode.
+
+### The exported file
+
+- The file browser suggests `<level>-edit.rif` in the original's folder. You
+  can pick any name that ends in `.rif`, even the original file.
+- If the file already exists, it is first copied to `<file>.bak`. This happens
+  only once: an existing `.bak` file is never replaced.
+- The add-on writes a temporary file in the same folder and then swaps it in.
+  A refused export changes no file.
+- Data that your edit does not touch is kept byte for byte. An edit also
+  updates what depends on it: normals, the shape's stored size and counts, and
+  the sizes of the chunks that hold it.
+- An export with no edits is an exact copy of the original file. An export
+  with edits is saved uncompressed, even if the original was compressed.
+- The export is built from the copy of the level stored in your `.blend` file.
+  At import it is the original. After a successful export it is the file you
+  just saved. Changes made to a `.rif` on disk after that are not seen.
+
+---
+
+## What is read-only
+
+These are shown but never written to a `.rif` file:
+
+- Panel settings. You can change the settings in the AvP panels, for
+  example **Door starts locked** or **Light brightness**. The new value is
+  kept in the `.blend` file only. While any setting differs from the original,
+  export is refused with **This export supports vertex edits only; undo the
+  AvP parameter edits first**. Setting the value back clears it. Every panel
+  says **Panel edits are staged, not exported**.
+- Information sections in the panels, for example
+  **AI navigation (read only)**, **Stored module acoustics (read only)**,
+  **Stored track sounds (read only)**,
+  **Alternate locations (source; read only)** and
+  **Generator / NPC source (read only)**.
+- Lights. They are ordinary Blender lights. You can change them in Blender,
+  but no change is exported.
+- Markers. **Editable Game Objects** markers are never written, and moving
+  one blocks export.
+- Door previews. **Base shape**, **Stored target** and **Play interpolation**
+  only change what you see.
+- Everything from a legacy import (**Strict Level Import** off).
+- Textures. The texture picker only reuses textures that the level already
+  has. The texture pictures, the level's texture list, `MATCHIMG` and
+  `CLRLOOKP` are never changed.
+- Baked lighting and module data. The baked vertex colours (`SHPVTINT`) are
+  not relit, and the module data (`MODULEDT`) is not changed.
+
+---
+
+## Known limits
+
+- This version does not yet confirm that the game loads edited levels. Work
+  on copies of your game files.
+- An edited level is saved uncompressed.
+- Only ordinary modules can be edited for export, within the rules above.
+- Panel settings, lights and markers are not exported.
+- A legacy import (**Strict Level Import** off) can't be exported and gets no
+  AvP panels.
+- **Bitmap Mode** has no effect in this version.
+- With **Strict Level Import** on, **Use MATCHIMG** and **Use CLRLOOKP** have
+  no effect, and polygons without a texture are magenta.
+- Light power is approximate. The default import makes point lights only; spot
+  lights appear only in a legacy import.
+- Not imported: the baked vertex colours (`SHPVTINT`), animated textures
+  (`TEXTANIM`) and shape animation (`ANIMSEQU`). Blender works out its own
+  shading instead of using the stored normals.
+- Characters get no armature: each bone is a separate mesh. Character and
+  level animations come only with a legacy import. Each level-track section
+  lasts one second (the stored timing is not used), and character frames are
+  spread evenly over each sequence.
+- Morph targets (legacy import only) are separate meshes, not shape keys.
+- There is no tab in the 3D View sidebar and there are no add-on preferences.
+  All options are in the import file browser and the Properties editor.
+- `.blend` files made with older versions must be re-imported. See
+  [INSTALL.md](INSTALL.md#older-blend-files).
+- A saved `.blend` file holds a copy of the level, the packed textures, and
+  the folder paths of the level and the game data on your computer. Keep that
+  in mind before you share one.
+- Blender's system console prints the import log under the old name
+  **AvP RIF Importer**. That log comes from this add-on.
+
+---
+
+## Check your download
+
+Each release page has a `SHA256SUMS` file and prints the zip's SHA-256.
+
+- On Windows PowerShell, run `Get-FileHash .\avp_blender_plugin-1.0.0-alpha.1.zip`.
+  The hash it prints must equal the one in `SHA256SUMS`. Upper and lower case
+  don't matter.
+- With the GitHub command-line tool, run
+  `gh attestation verify avp_blender_plugin-1.0.0-alpha.1.zip --repo Melanikus/AVP_BlenderPlugin`.
+  It checks that the file is the one the release run built.
+- The release page links the zip's VirusTotal report.
+
+Each release is checked by Snyk Code (a code scanner) and by VirusTotal before
+it is published. Install only the file named `avp_blender_plugin-1.0.0-alpha.1.zip`.
+The source-code archives that GitHub adds to every release are not the
+release package.
+
+---
+
+## Reporting problems
+
+Open an issue at
+[github.com/Melanikus/AVP_BlenderPlugin/issues](https://github.com/Melanikus/AVP_BlenderPlugin/issues).
+Please include:
+
+- your Blender version, and the add-on version from its entry in
+  **Edit > Preferences... > Add-ons**;
+- the name of the level file;
+- the exact message Blender showed;
+- what you did just before it.
+
+The add-on keeps a log file for each Blender session. It holds every message
+the add-on showed you, and every error it logged, each with its time, so you
+can still read an error after it is gone from the screen. The panel
+**AvP Level Settings** (World tab) shows the file's name and its folder. The
+folder is in the add-on's own user folder, under the extensions folder of
+your Blender user profile. Attach the newest `session-...log` to the issue.
+It can hold folder names from your computer, so read it first. The detailed
+import log is also printed to Blender's system console. Please don't attach
+game files.
+
+If you think you found a security problem, don't post the details in a public
+issue. Open an issue that only asks for a private contact.
 
 ---
 
 ## Credits
 
-- **AdiJager** — author; design, RIF format research, extensive
+- AdiJager — author; design, RIF format research, extensive
   testing against AvP Classic (1999) assets.
-- **DeepSeek** — pair-programming assistant across the parser, mesh
+- DeepSeek — pair-programming assistant across the parser, mesh
   pipeline, character animation and packaging layers.
-- **The AvP (1999) developers** — for publishing the original source
+- The AvP (1999) developers — for publishing the original source
   code, which made format reverse-engineering viable.
+- AVP_BlenderPlugin is maintained by Melanikus.
 - Built with the Blender Python API. No external dependencies.
 
 ---
 
-## License
+## Licence
 
-GPL-3.0-or-later. See [LICENSE](LICENSE).
+GPL-3.0-or-later. See [LICENSE](LICENSE). The source files keep AdiJager's
+copyright notice.
