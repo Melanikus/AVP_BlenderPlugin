@@ -25,7 +25,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "The version in blender_manifest.toml, three numbers such as 1.4.0"
+        description: "The version in blender_manifest.toml, such as 1.0.0-alpha.0"
         required: true
         type: string
       sha256:
@@ -72,7 +72,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          [[ "$VERSION" =~ ^(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})$ ]] || { echo "::error::The version is not three whole numbers"; exit 1; }
+          python3 -I -c 'import sys; sys.path.insert(0, "tools"); from check_virustotal import PACKAGE_NAME; sys.exit(0 if PACKAGE_NAME.fullmatch("avp_blender_plugin-" + sys.argv[1] + ".zip") else 1)' "$VERSION" || { echo "::error::The version is not a strict release version"; exit 1; }
           [[ "$WANTED" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::The SHA-256 is not 64 small letters and digits"; exit 1; }
           [ "$GITHUB_REF" = "refs/heads/main" ] || { echo "::error::A release is made only from main"; exit 1; }
           tip=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
@@ -209,7 +209,7 @@ jobs:
           printf 'x-apikey: %s\n' "$VIRUSTOTAL_API_KEY" > "$headers"
           unset VIRUSTOTAL_API_KEY
           zip="release/avp_blender_plugin-$VERSION.zip"
-          check() { python3 -I tools/check_virustotal.py "$@" | tee "$RUNNER_TEMP/said"; grep '^ANSWER: ' "$RUNNER_TEMP/said" | tail -1; }
+          check() { local status=0; python3 -I tools/check_virustotal.py "$@" > "$RUNNER_TEMP/said" || status=$?; cat "$RUNNER_TEMP/said" >&2; [ "$status" -eq 0 ] || return "$status"; grep '^ANSWER: ' "$RUNNER_TEMP/said" | tail -1; }
           check --package "$(basename "$zip")" --sha256 "$WANTED" >/dev/null
           deadline=$(( $(date +%s) + 25*60 ))
           # One question at a time, at most one every 20 seconds, so this stays inside the free key's 4 a minute.
@@ -222,8 +222,9 @@ jobs:
             [ "$code" = 200 ] || { echo "::error::VirusTotal didn't take the zip (HTTP $code)"; exit 1; }
             id=$(check --answer --kind upload --sha256 "$WANTED" | sed -n 's/^ANSWER: analysis //p')
             [ -n "$id" ] || exit 1
+            enc=$(python3 -I -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$id")
             while :; do
-              code=$(ask "https://www.virustotal.com/api/v3/analyses/$id")
+              code=$(ask "https://www.virustotal.com/api/v3/analyses/$enc")
               [ "$code" = 200 ] || { echo "::error::VirusTotal's analysis answer was HTTP $code"; exit 1; }
               answer=$(check --answer --kind analysis --sha256 "$WANTED" --analysis-id "$id")
               [ "$answer" = "ANSWER: waiting" ] || break
