@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import secrets
 import shlex
 import shutil
 import subprocess
@@ -140,7 +141,7 @@ class ScanWorkflow(unittest.TestCase):
             environment = dict(os.environ)
             environment.update({"PATH": str(binary) + os.pathsep + environment.get("PATH", ""),
                                 "RUNNER_TEMP": str(root), "GITHUB_OUTPUT": str(output),
-                                "VIRUSTOTAL_API_KEY": "fake-local-proof-key", "VERSION": VERSION, "WANTED": wanted})
+                                "VIRUSTOTAL_API_KEY": secrets.token_hex(16), "VERSION": VERSION, "WANTED": wanted})
             bootstrap = ('export PATH="$1:/usr/bin:/bin"; '
                          'for name in curl python3 sleep; do '
                          '[ "$(command -v "$name")" = "$1/$name" ] || exit 125; done; source "$2"')
