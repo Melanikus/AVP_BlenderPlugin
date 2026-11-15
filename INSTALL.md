@@ -343,8 +343,8 @@ below). Meshes also show the panel **AvP Existing RIM Textures**.
 
 - Panels appear only for objects from an import with **Strict Level Import**
   on.
-- Lights have no AvP panel. To see a lamp's settings, select the lamp's mesh;
-  it shows **AvP Runtime Light**.
+- Imported editor lights and their markers show **AvP Editor / Prelight**.
+  A placed-light mesh and its child emitter show **AvP Placed Light Object**.
 - The panels of generators, prelights, sounds, cables, particle generators,
   player starts and hierarchies need their markers, so import with
   **Editable Game Objects** on.
@@ -367,7 +367,7 @@ From the top:
 If a panel shows **Cannot read RIF object chunk: `<reason>`**, the stored data
 for this object can't be read. Re-import the level.
 
-### Changed settings stay in Blender
+### Light settings export; other settings stay in Blender
 
 - Light settings in **AvP Editor / Prelight** and **AvP Placed Light Object**
   are saved by export, including colour, range, flags, type, timing and
@@ -871,7 +871,7 @@ collections it had created.
 
 | You see | What it means | What to do |
 |---|---|---|
-| No AvP panel | The object comes from a legacy import or from another add-on, or it is a light. | Re-import with **Strict Level Import** on. For a lamp, select its mesh. |
+| No AvP panel | The object comes from a legacy import or from another add-on. | Re-import with **Strict Level Import** on. Imported lights, their markers and placed-light meshes have AvP light panels. |
 | No panel for generators, sounds and similar | Their markers were not imported. | Re-import with **Editable Game Objects** on. |
 | **AVP_BlenderPlugin: Re-import Required** | The scene holds data from an older version. | Re-import the level. |
 | **Cannot read RIF object chunk: `<reason>`** | The stored data for this object can't be read. | Re-import the level. |
