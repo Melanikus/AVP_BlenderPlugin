@@ -210,22 +210,22 @@ jobs:
           unset VIRUSTOTAL_API_KEY
           zip="release/avp_blender_plugin-$VERSION.zip"
           check() { python3 -I tools/check_virustotal.py "$@" | tee "$RUNNER_TEMP/said"; grep '^ANSWER: ' "$RUNNER_TEMP/said" | tail -1; }
-          check --package "$zip" --sha256 "$WANTED" >/dev/null
+          check --package "$(basename "$zip")" --sha256 "$WANTED" >/dev/null
           deadline=$(( $(date +%s) + 25*60 ))
           # One question at a time, at most one every 20 seconds, so this stays inside the free key's 4 a minute.
-          ask() { sleep 20; [ "$(date +%s)" -lt "$deadline" ] || { echo "::error::VirusTotal took too long"; exit 1; }; curl -sS --max-time 120 -H @"$headers" -o "$RUNNER_TEMP/answer.json" -w '%{http_code}' "$@"; }
+          ask() { sleep 20; [ "$(date +%s)" -lt "$deadline" ] || { echo "::error::VirusTotal took too long"; exit 1; }; curl -sS --max-time 120 -H @"$headers" -o "release/vt-answer.json" -w '%{http_code}' "$@"; }
           code=$(ask "https://www.virustotal.com/api/v3/files/$WANTED")
           answer=""
-          if [ "$code" = 200 ]; then answer=$(check --answer "$RUNNER_TEMP/answer.json" --kind lookup --sha256 "$WANTED"); fi
+          if [ "$code" = 200 ]; then answer=$(check --answer --kind lookup --sha256 "$WANTED"); fi
           if [ "$code" = 404 ] || [ "$answer" = "ANSWER: not-analysed" ]; then
             code=$(ask -F "file=@$zip" "https://www.virustotal.com/api/v3/files")
             [ "$code" = 200 ] || { echo "::error::VirusTotal didn't take the zip (HTTP $code)"; exit 1; }
-            id=$(check --answer "$RUNNER_TEMP/answer.json" --kind upload --sha256 "$WANTED" | sed -n 's/^ANSWER: analysis //p')
+            id=$(check --answer --kind upload --sha256 "$WANTED" | sed -n 's/^ANSWER: analysis //p')
             [ -n "$id" ] || exit 1
             while :; do
               code=$(ask "https://www.virustotal.com/api/v3/analyses/$id")
               [ "$code" = 200 ] || { echo "::error::VirusTotal's analysis answer was HTTP $code"; exit 1; }
-              answer=$(check --answer "$RUNNER_TEMP/answer.json" --kind analysis --sha256 "$WANTED" --analysis-id "$id")
+              answer=$(check --answer --kind analysis --sha256 "$WANTED" --analysis-id "$id")
               [ "$answer" = "ANSWER: waiting" ] || break
             done
           elif [ "$code" != 200 ]; then
