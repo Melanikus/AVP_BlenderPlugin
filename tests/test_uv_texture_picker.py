@@ -415,3 +415,7 @@ finally:
         bpy.ops.object.mode_set(mode='OBJECT')
     addon.unregister()
     assert not bpy.app.timers.is_registered(picker._remember_editors)
+    area = next((area for area in bpy.context.screen.areas
+                 if area.type == 'IMAGE_EDITOR' and area.ui_type == 'UV'), None)
+    if area is not None:
+        area.type = 'VIEW_3D'
