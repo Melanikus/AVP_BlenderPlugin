@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "avp_blender_plugin"
-version = "1.0.0-alpha.0"
+version = "1.0.0-alpha.1"
 name = "AVP_BlenderPlugin"
 tagline = "A fork of AdiJager's BlendRIF for AvP level editing"
 maintainer = "Melanikus"
@@ -35,4 +35,4 @@ paths_exclude_pattern = [
 ]
 
 [permissions]
-files = "Read RIF assets and game textures; write RIF exports to the chosen file"
+files = "Read game assets and textures; write chosen RIF exports"

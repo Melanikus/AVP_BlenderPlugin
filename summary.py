@@ -15,6 +15,7 @@ import math
 
 from .config import MAT_ROUGHNESS, MAT_SPECULAR
 from .textures import TextureStats
+from .session_log import report as _report
 from .utils import log
 
 
@@ -129,12 +130,12 @@ def print_summary(op, scan, state, counters, ctx):
     log.info("=" * 70)
 
     for w in ctx.warnings[:5]:
-        op.report({'WARNING'}, w)
+        _report(op, {'WARNING'}, w)
     if len(ctx.warnings) > 5:
-        op.report({'WARNING'},
+        _report(op, {'WARNING'},
                   f"... and {len(ctx.warnings) - 5} more warnings")
 
-    op.report({'INFO'},
+    _report(op, {'INFO'},
               f"Objects: {stats.ok}, "
               f"Skipped: no_shape={stats.skipped_no_shape}, "
               f"nogeom={stats.skipped_nogeom}, "

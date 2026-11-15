@@ -19,8 +19,9 @@ from .avp_fields import game_marker, classify, read_edits
 from .geometry import quat_to_mat
 from .geometry import extract_polygons
 from .level_validation import read_level, check_geometry_range
-from .parsers.shapes import parse_objhead1
+from .parsers.shapes import OBJHEAD_OFF_POS, parse_objhead1
 from .raw_rif import MAX_RIF_BYTES, source_from_text, walk_tree, reader_boundary
+from .session_log import report as _report
 from .utils import log
 
 
@@ -121,10 +122,12 @@ def _texel(value, size, flip=False):
     return packed
 
 
-def _update_uvs(original, result, shape, obj, saved):
+def _update_uvs(original, result, shape, obj, saved, base=None, sizes=None):
+    """Write the moved UVs. `base` is the UV state the moves are measured from (the import's, or with texture picks the
+    pick-adjusted one); `sizes` gives the new image size of each picked source polygon, whose UVs are in that image's space."""
     mesh = obj.data
-    initial = baseline_coordinates(saved, len(mesh.loops), obj.name,
-                                   "uv_coordinates", 8)
+    initial = base if base is not None else baseline_coordinates(saved, len(mesh.loops), obj.name,
+                                                                 "uv_coordinates", 8)
     current = _uv_bytes(mesh)
     mapping = saved["uv_mapping"]
     if not isinstance(mapping, list) or len(mapping) != len(mesh.loops) * 5:
@@ -147,6 +150,8 @@ def _update_uvs(original, result, shape, obj, saved):
     for loop, (before, after) in enumerate(zip(struct.iter_unpack("<2f", initial),
                                               struct.iter_unpack("<2f", current))):
         polygon, index, corner, width, height = mapping[loop * 5:loop * 5 + 5]
+        if sizes and str(polygon) in sizes:
+            width, height = sizes[str(polygon)]
         key = index, corner
         if key not in offsets:
             if before != after:
@@ -304,9 +309,113 @@ def _update_derived_geometry(original, result, shape, moved_index, label):
              label, sorted(updated_normals), sorted(touched_vertices), outside)
 
 
-@reader_boundary("REBINFF2 export")
+def _check_scaled_bounds(decoded, header, position, environment_scale):
+    """The edited shape's radius and extents, on their own and placed in the world, must stay inside the game's signed range."""
+    bounds = struct.unpack_from("<6i", decoded, header.offset + 48)
+    radius = struct.unpack_from("<f", decoded, header.offset + 44)[0]
+    if radius * environment_scale >= 2147483648:
+        raise ValueError("The edited shape's scaled radius exceeds the game's signed range")
+    for i, bound in enumerate(bounds):
+        if (not -2147483648 <= bound * environment_scale < 2147483648
+                or not -2147483648 <= (bound + position[i // 2]) * environment_scale < 2147483648):
+            raise ValueError("The edited module's scaled local/world bounds exceed the game's signed range")
+
+
+def _origin_move(obj, saved, initial, current, scale):
+    """The centre edit. Return the object's new origin in the world (a Blender vector) when moving the origin is ALL that changed:
+    the rotation and scale are the saved ones, and every vertex moved by exactly the opposite amount, so the shape stands
+    where it stood. Return None for anything else (a moved object, or a moved origin with other edits)."""
+    values = saved["matrix"]
+    if (not isinstance(values, list) or len(values) != 16
+            or not all(isinstance(value, (int, float)) and math.isfinite(value) for value in values)):
+        return None
+    before = Matrix([values[row * 4:row * 4 + 4] for row in range(4)])
+    after = obj.matrix_world
+    if any(abs(after[row][column] - before[row][column]) > 1e-6 for row in range(3) for column in range(3)):
+        return None
+    if tuple(after[3]) != (0.0, 0.0, 0.0, 1.0) or tuple(before[3]) != (0.0, 0.0, 0.0, 1.0):
+        return None
+    delta = Vector((after[0][3] - before[0][3], after[1][3] - before[1][3], after[2][3] - before[2][3]))
+    try:
+        local = before.to_3x3().inverted() @ delta
+    except ValueError:
+        return None
+    if len(initial) != len(current) or len(current) == 0 or len(current) % 12 or not all(math.isfinite(value) for value in local):
+        return None
+    old = array("f")
+    new = array("f")
+    old.frombytes(initial)
+    new.frombytes(current)
+    if sys.byteorder != "little":
+        old.byteswap()
+        new.byteswap()
+    # Float noise is allowed (a quarter of a game unit, or the float's own rounding at large coordinates), no more.
+    tolerance = max(0.25 * scale, 4e-7 * max(max(abs(value) for value in old), max(abs(value) for value in new)))
+    if max(abs(value) for value in local) <= tolerance:
+        return None
+    for index, value in enumerate(new):
+        if not math.isfinite(value) or abs((value - old[index]) + local[index % 3]) > tolerance:
+            return None
+    return Vector((after[0][3], after[1][3], after[2][3]))
+
+
+def _recentre_shape(original, result, shape, object_header, placement, origin, scale, label):
+    """Write the moved centre. The game measures a shape from its object's position, so the new centre is the Blender origin, in
+    whole game units: the object's position becomes that point and every vertex moves by the same amount the other way, so
+    the shape stays where it was. Only a shape with no rotation is done: with a rotation the vertices would need rounding.
+    Returns what the final range check and the log need."""
+    if not all(abs(value) < 1e-6 for value in placement.quat[:3]) or abs(abs(placement.quat[3]) - 1.0) > 1e-6:
+        raise ValueError(f"{label}: moving the centre of a rotated shape is not supported yet")
+    # Blender's X, Y, Z are the game's X, Z, -Y (the import's axis swap, undone)
+    game = (origin.x / scale, -origin.z / scale, origin.y / scale)
+    if not all(math.isfinite(value) and abs(value) <= 16777216 for value in game):
+        raise ValueError(f"{label}: the new centre is further out than the game keeps (16,777,216 units)")
+    position_offset = object_header.offset + 12 + OBJHEAD_OFF_POS
+    old_position = struct.unpack_from("<3i", original, position_offset)
+    shift = tuple(round(game[axis]) - old_position[axis] for axis in range(3))
+    if shift == (0, 0, 0):
+        raise ValueError(f"{label}: the new centre is the same game point as the old one")
+    children = {node.identifier: [] for node in shape.children or ()}
+    for node in shape.children or ():
+        children[node.identifier].append(node)
+    for identifier in (b"SHPRAWVT", b"SHPHEAD1"):
+        if len(children.get(identifier, ())) != 1:
+            raise ValueError(f"{label}: missing or ambiguous {identifier.decode()} for a centre edit")
+    if len(children.get(b"SHPCENTR", ())) > 1:
+        raise ValueError(f"{label}: ambiguous SHPCENTR for a centre edit")
+    vertex_node = children[b"SHPRAWVT"][0]
+    header = children[b"SHPHEAD1"][0]
+    points = [tuple(point[axis] - shift[axis] for axis in range(3))
+              for point in struct.iter_unpack("<3i", original[vertex_node.offset + 12:vertex_node.offset + vertex_node.size])]
+    if not points:
+        raise ValueError(f"{label}: the shape has no vertices")
+    position = tuple(old_position[axis] + shift[axis] for axis in range(3))
+    bounds = struct.unpack_from("<6i", original, header.offset + 48)
+    new_bounds = tuple(bounds[index] - shift[index // 2] for index in range(6))
+    # Every number is checked before the first one is written
+    check_geometry_range([value for point in points for value in point] + list(position) + list(new_bounds), f"{label} moved centre")
+    radius = _covering_radius(points)
+    for index, point in enumerate(points):
+        struct.pack_into("<3i", result, vertex_node.offset + 12 + index * 12, *point)
+    struct.pack_into("<3i", result, position_offset, *position)
+    struct.pack_into("<6i", result, header.offset + 48, *new_bounds)
+    struct.pack_into("<f", result, header.offset + 44, radius)
+    for centre_node in children.get(b"SHPCENTR", ()):
+        centre = struct.unpack_from("<3i", original, centre_node.offset + 12)
+        moved = tuple(centre[axis] - shift[axis] for axis in range(3))
+        check_geometry_range(moved, f"{label} moved SHPCENTR")
+        struct.pack_into("<3i", result, centre_node.offset + 12, *moved)
+    return header, position, label, shift
+
+
 def export_bytes(scene, text):
-    """Patch one module vertex or stored module UVs, never both together."""
+    """The bytes to save: one module vertex, stored module UVs and RIM texture picks (together, any of them), or new geometry on its own."""
+    return _export(scene, text)[0]
+
+
+@reader_boundary("REBINFF2 export")
+def _export(scene, text):
+    """Returns the bytes and the module objects whose edits they hold (the ones that need their snapshot refreshed afterwards)."""
     original, tree, record = source_from_text(text)
     source_scan = read_level(original)
     if read_edits(text):
@@ -363,10 +472,12 @@ def export_bytes(scene, text):
 
     result = bytearray(original)
     changes = []
+    recentred = []
     uv_writes = 0
     texture_writes = 0
     edited_geometry = None
     additions = {}
+    edited_objects = []
     for offset, obj in objects.items():
         saved = placements[str(offset)]
         if not isinstance(saved, dict) or not {"signature", "matrix", "modifiers", "coordinates"} <= saved.keys():
@@ -379,27 +490,38 @@ def export_bytes(scene, text):
             validate_prefix(obj, saved)
         uv_changed = not growing and mesh_signature(obj.data) != saved["signature"]
         texture_changed = bool(obj.get("avp_blender_plugin_texture_edits"))
+        uv_base = uv_sizes = None
         if growing and texture_changed:
             raise ValueError("Export existing-polygon texture edits separately from new geometry")
         if texture_changed:
             if ("topology_signature" not in saved or mesh_signature(
                     obj.data, include_uv=False, include_material=False) != saved["topology_signature"]):
                 raise ValueError(f"{obj.name}: topology changed; re-import before assigning textures")
+            # A picked polygon's UVs are kept in its new texture's space, so a UV move is the difference to that state
+            from .texture_picker import texture_state
+            picks, uv_base, uv_sizes = texture_state(obj, saved)
+            uv_changed = _uv_bytes(obj.data) != uv_base
         elif uv_changed and ("uv_signature" not in saved
                            or mesh_signature(obj.data, include_uv=False) != saved["uv_signature"]):
             raise ValueError(f"{obj.name}: topology or material assignment changed; re-import before exporting")
         if obj.data.shape_keys is not None:
             raise ValueError(f"{obj.name}: shape-key edits are not supported by vertex export")
-        if ([value for row in obj.matrix_world for value in row] != saved["matrix"]
-                or [[modifier.name, modifier.type] for modifier in obj.modifiers] != saved["modifiers"]):
-            raise ValueError(f"{obj.name}: object transform or modifiers changed; use Edit Mode to move a vertex")
         old_count = saved["mesh_counts"][0] if growing else len(obj.data.vertices)
         initial = baseline_coordinates(saved, old_count, obj.name)
         current = coordinate_bytes(obj.data)
+        if [[modifier.name, modifier.type] for modifier in obj.modifiers] != saved["modifiers"]:
+            raise ValueError(f"{obj.name}: object transform or modifiers changed; use Edit Mode to move a vertex")
+        origin_move = None
+        if [value for row in obj.matrix_world for value in row] != saved["matrix"]:
+            # A moved object is refused. The one move the export keeps is the centre: the origin moved and the mesh moved
+            # the opposite way, so nothing changed in the world.
+            if not (growing or uv_changed or texture_changed):
+                origin_move = _origin_move(obj, saved, initial, current, scale)
+            if origin_move is None:
+                raise ValueError(f"{obj.name}: object transform or modifiers changed; use Edit Mode to move a vertex "
+                                 "(or move only the origin, e.g. Set Origin, to recentre the shape)")
         if initial == current and not uv_changed and not texture_changed and not growing:
             continue
-        if (uv_changed or texture_changed) and initial != current:
-            raise ValueError("Export UV edits and vertex movement separately; undo one edit family first")
         if len(initial) != len(current) and not growing:
             raise ValueError(f"{obj.name}: vertex count changed")
         object_node = nodes[offset]
@@ -437,16 +559,23 @@ def export_bytes(scene, text):
                 raise ValueError("Export new geometry for one module at a time")
             additions = build_additions(original, shape, object_node, obj, saved,
                                         placement, scale, source_scan.environment_scale, text)
+            edited_objects.append(obj)   # new geometry changes the file's layout: the refresh refuses it and says to re-import
             continue
         if texture_changed or uv_changed:
             if any(n.identifier == b"TEXTANIM" for n in shape.children or ()):
                 raise ValueError(f"{obj.name}: animated textures are not supported")
+        if texture_changed or uv_changed or initial != current:
+            edited_objects.append(obj)
+        # A texture pick, UV moves and a vertex move each write their own bytes, so one export takes all of them.
         if texture_changed:
             from .texture_picker import update_texture_bytes
-            texture_writes += update_texture_bytes(original, result, shape, obj, saved, record)
-            continue
+            texture_writes += update_texture_bytes(original, result, shape, obj, picks)
         if uv_changed:
-            uv_writes += _update_uvs(original, result, shape, obj, saved)
+            uv_writes += _update_uvs(original, result, shape, obj, saved, uv_base, uv_sizes)
+        if origin_move is not None:
+            if recentred:
+                raise ValueError("Export the centre of one shape at a time")
+            recentred.append(_recentre_shape(original, result, shape, header, placement, origin_move, scale, obj.name))
             continue
         inverse_rotation = quat_to_mat(*placement.quat).inverted()
         for index, (before, after) in enumerate(zip(struct.iter_unpack("<3f", initial),
@@ -470,25 +599,24 @@ def export_bytes(scene, text):
             struct.pack_into("<3i", result, position, *new)
             _update_derived_geometry(original, result, shape, index, obj.name)
             edited_geometry = shape_headers[0], placement
-    if sum(bool(value) for value in (changes, uv_writes, texture_writes, additions)) > 1:
-        raise ValueError("Export vertex, UV, texture and new-geometry edits separately; undo one edit family first")
+    if (additions or recentred) and (changes or uv_writes or texture_writes or (additions and recentred)):
+        raise ValueError("Export new geometry and a moved centre separately from vertex, UV and texture edits; undo one edit family first")
     from .raw_rif import replace_payloads
     decoded = replace_payloads(original, tree, additions) if additions else bytes(result)
     scan = read_level(decoded)
+    if recentred:
+        header, position, label, shift = recentred[0]
+        _check_scaled_bounds(decoded, header, position, scan.environment_scale)
+        log.info("Centre export moved %s's origin by %s game units; the object's position and every vertex, the extents, the radius and "
+                 "the stored centre moved with it; the shape stays where it was in the world", label, shift)
+        return decoded, edited_objects
     if changes:
         header, placement = edited_geometry
-        bounds = struct.unpack_from("<6i", decoded, header.offset + 48)
-        radius = struct.unpack_from("<f", decoded, header.offset + 44)[0]
-        if radius * scan.environment_scale >= 2147483648:
-            raise ValueError("The edited shape's scaled radius exceeds the game's signed range")
-        for i, bound in enumerate(bounds):
-            if (not -2147483648 <= bound * scan.environment_scale < 2147483648
-                    or not -2147483648 <= (bound + placement.pos[i // 2]) * scan.environment_scale < 2147483648):
-                raise ValueError("The edited module's scaled local/world bounds exceed the game's signed range")
+        _check_scaled_bounds(decoded, header, placement.pos, scan.environment_scale)
         log.info("Vertex export changed %s vertex %s at byte %s: %s -> %s; derived normals/bounds updated; no size/offset fields changed", *changes[0])
-        return decoded
+        return decoded, edited_objects
     if uv_writes or texture_writes or additions:
-        return decoded
+        return decoded, edited_objects
     encoded_file = record.get("compressed_file")
     if encoded_file is not None:
         raw_file = base64.b64decode("".join(encoded_file), validate=True)
@@ -497,8 +625,8 @@ def export_bytes(scene, text):
         from .rif_loader import load_rif_auto
         if load_rif_auto(raw_file) != original:
             raise ValueError("Preserved compressed file disagrees with decoded source")
-        return raw_file
-    return original
+        return raw_file, []
+    return original, []
 
 
 def suggested_export_path(source_path):
@@ -599,7 +727,7 @@ class EXPORT_OT_avp_blender_plugin(bpy.types.Operator):
             self.filepath = suggested_export_path(filepath)
         except ValueError as error:
             log.error("RIF export source: %s", error)
-            self.report({'ERROR'}, str(error))
+            _report(self, {'ERROR'}, str(error))
             return {'CANCELLED'}
         context.window_manager.fileselect_add(self)
         return {'RUNNING_MODAL'}
@@ -616,11 +744,20 @@ class EXPORT_OT_avp_blender_plugin(bpy.types.Operator):
             # UV RNA arrays are unavailable while Blender owns an edit mesh.
             if restore_edit_mode:
                 bpy.ops.object.mode_set(mode='OBJECT')
-            data = export_bytes(context.scene, text)
+            data, edited = _export(context.scene, text)
             backup, created = _write_level(target, data)
+            # The file is saved: what was saved is now the starting point, so the next edit needs no re-import.
+            refresh_warning = ""
+            if edited:
+                from .export_refresh import refresh_after_export
+                try:
+                    refresh_after_export(text, data, edited)
+                except (ValueError, RuntimeError, OSError, KeyError, IndexError, struct.error) as error:
+                    log.error("Snapshot refresh after export failed: %s", error)
+                    refresh_warning = f"; to keep editing, re-import the saved file ({error})"
         except (ValueError, RuntimeError, OSError, struct.error) as error:
             log.error("RIF export failed: %s: %s", self.filepath, error)
-            self.report({'ERROR'}, f"{os.path.basename(self.filepath)}: {error}")
+            _report(self, {'ERROR'}, f"{os.path.basename(self.filepath)}: {error}")
             return {'CANCELLED'}
         finally:
             if restore_edit_mode and context.mode != 'EDIT_MESH':
@@ -629,7 +766,8 @@ class EXPORT_OT_avp_blender_plugin(bpy.types.Operator):
         if backup is not None:
             action = "backup made" if created else "first backup kept"
             backup_report = f"; {action}: {os.path.basename(backup)}"
-        self.report({'INFO'}, f"Saved {os.path.basename(target)}{backup_report}; module vertex, UV or texture export")
+        _report(self, {'WARNING' if refresh_warning else 'INFO'},
+                f"Saved {os.path.basename(target)}{backup_report}; module vertex, UV or texture export{refresh_warning}")
         return {'FINISHED'}
 
 

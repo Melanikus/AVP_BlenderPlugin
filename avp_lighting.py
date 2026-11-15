@@ -15,6 +15,7 @@ from .avp_panels import AVP_BLENDER_PLUGIN_PT_environment
 from .char_baker import _iter_action_fcurves
 from .parsers.shapes import parse_objhead1
 from .raw_rif import read_tree, source_from_text, walk_tree
+from .session_log import report as _report
 from .utils import log
 
 _COLLECTION = "avp_blender_plugin_lighting_preview_collection"
@@ -334,13 +335,13 @@ class AVP_BLENDER_PLUGIN_OT_build_lighting_preview(bpy.types.Operator):
 
     def execute(self, context):
         try:
-            text, _, _, _ = object_source(context.object)
+            text, _, _, _ = object_source(context.active_object)
             count = build_preview(context, text, self.strength)
         except (ValueError, RuntimeError) as error:
             log.error("AvP lighting preview: %s", error)
-            self.report({'ERROR'}, str(error))
+            _report(self, {'ERROR'}, str(error))
             return {'CANCELLED'}
-        self.report({'INFO'}, f"{count} approximate point lights created; staged edits require Refresh; no RIF changes")
+        _report(self, {'INFO'}, f"{count} approximate point lights created; staged edits require Refresh; no RIF changes")
         return {'FINISHED'}
 
 
@@ -355,9 +356,9 @@ class AVP_BLENDER_PLUGIN_OT_remove_lighting_preview(bpy.types.Operator):
             remove_preview(context.scene)
         except (ValueError, RuntimeError) as error:
             log.error("AvP lighting preview removal: %s", error)
-            self.report({'ERROR'}, str(error))
+            _report(self, {'ERROR'}, str(error))
             return {'CANCELLED'}
-        self.report({'INFO'}, "Lighting preview removed")
+        _report(self, {'INFO'}, "Lighting preview removed")
         return {'FINISHED'}
 
 

@@ -4,11 +4,14 @@
 
 from array import array
 import math
+import os
 import struct
 import time
 
 import bpy
-from mathutils import Vector
+from mathutils import Matrix, Vector
+
+from . import session_log
 
 from .avp_fields import (
     FIELDS, INTEGER_FIELDS, applicable_fields, classify, field_node, field_value,
@@ -17,6 +20,7 @@ from .avp_fields import (
     object_source, particle_info, placed_light_info, platform_lift_info, read_edits, self_destruct_info, set_field, simple_info, sound_info, start_info, stdlight_info,
     switch_door_info, teleport_info, track_destruction_info, track_info, track_sounds_info,
 )
+from .session_log import report as _report
 from .utils import log
 from .geometry import quat_to_mat
 from .parsers.shapes import parse_objhead1
@@ -234,7 +238,7 @@ class AVP_BLENDER_PLUGIN_OT_play_door(bpy.types.Operator):
         global _door_playback, _door_playback_error
         if _door_playback is not None:
             if not stop_door_playback():
-                self.report({'ERROR'}, _door_playback_error)
+                _report(self, {'ERROR'}, _door_playback_error)
                 return {'CANCELLED'}
             return {'FINISHED'}
         try:
@@ -254,10 +258,10 @@ class AVP_BLENDER_PLUGIN_OT_play_door(bpy.types.Operator):
             bpy.app.timers.register(playback.callback, first_interval=0.0)
             _door_playback = playback
             _door_playback_error = ""
-            self.report({'INFO'}, "Door interpolation: one second each way, then starting pose restored")
+            _report(self, {'INFO'}, "Door interpolation: one second each way, then starting pose restored")
         except (KeyError, ValueError, RuntimeError, struct.error) as error:
             log.error("AvP door playback: %s", error)
-            self.report({'ERROR'}, str(error))
+            _report(self, {'ERROR'}, str(error))
             return {'CANCELLED'}
         return {'FINISHED'}
 
@@ -286,10 +290,10 @@ class AVP_BLENDER_PLUGIN_OT_preview_door(bpy.types.Operator):
             obj.data.update()
             _mark_door_preview(obj, self.target_id)
             _door_playback_error = ""
-            self.report({'INFO'}, "Door shape previewed; restore Base shape before vertex export")
+            _report(self, {'INFO'}, "Door shape previewed; restore Base shape before vertex export")
         except (KeyError, ValueError, RuntimeError, struct.error) as error:
             log.error("AvP door preview: %s", error)
-            self.report({'ERROR'}, str(error))
+            _report(self, {'ERROR'}, str(error))
             return {'CANCELLED'}
         finally:
             if restore_edit:
@@ -328,7 +332,7 @@ class AVP_BLENDER_PLUGIN_OT_edit_field(bpy.types.Operator):
             return context.window_manager.invoke_props_dialog(self)
         except (ValueError, KeyError) as error:
             log.error("AvP setting: %s", error)
-            self.report({'ERROR'}, str(error))
+            _report(self, {'ERROR'}, str(error))
             return {'CANCELLED'}
 
     def draw(self, context):
@@ -344,7 +348,57 @@ class AVP_BLENDER_PLUGIN_OT_edit_field(bpy.types.Operator):
             set_field(context.object, self.code, value)
         except (KeyError, ValueError, RuntimeError) as error:
             log.error("AvP setting: %s", error)
-            self.report({'ERROR'}, str(error))
+            _report(self, {'ERROR'}, str(error))
+            return {'CANCELLED'}
+        return {'FINISHED'}
+
+
+class AVP_BLENDER_PLUGIN_OT_recentre_shape(bpy.types.Operator):
+    bl_idname = "avp_blender_plugin.recentre_shape"
+    bl_label = "Recentre shape"
+    bl_description = ("Move the origin of this module to the bottom, middle or top of its box, over the middle of it. The shape "
+                      "stays where it is in the level; Export writes the new centre (the old editor's Recentre Shape)")
+    bl_options = {'REGISTER', 'UNDO'}
+    where: bpy.props.EnumProperty(
+        name="Where", default='BOTTOM',
+        items=(('BOTTOM', "Bottom", "The lowest point of the module"),
+               ('MIDDLE', "Middle", "The middle of the module's box"),
+               ('TOP', "Top", "The highest point of the module")))
+
+    @classmethod
+    def poll(cls, context):
+        obj = context.object
+        return obj is not None and obj.type == 'MESH' and bool(obj.get("avp_blender_plugin_source_text"))
+
+    def execute(self, context):
+        obj = context.object
+        try:
+            if obj.mode != 'OBJECT':
+                raise ValueError("Leave Edit Mode first")
+            if obj.parent is not None or len(obj.constraints):
+                raise ValueError("A parented or constrained object cannot be recentred")
+            mesh = obj.data
+            if mesh.users != 1:
+                raise ValueError("The mesh is shared with another object; make it single user first")
+            if not len(mesh.vertices):
+                raise ValueError("The shape has no vertices")
+            world = obj.matrix_world.copy()
+            points = [world @ vertex.co for vertex in mesh.vertices]
+            low = Vector((min(p.x for p in points), min(p.y for p in points), min(p.z for p in points)))
+            high = Vector((max(p.x for p in points), max(p.y for p in points), max(p.z for p in points)))
+            height = {'BOTTOM': low.z, 'MIDDLE': (low.z + high.z) / 2.0, 'TOP': high.z}[self.where]
+            target = Vector(((low.x + high.x) / 2.0, (low.y + high.y) / 2.0, height))
+            if not all(math.isfinite(value) for value in target):
+                raise ValueError("The shape's box is not finite")
+            # The mesh moves the opposite way to the origin, so the shape stays where it is
+            local = world.inverted() @ target
+            mesh.transform(Matrix.Translation(-local))
+            mesh.update()
+            obj.location = obj.location + (target - world.translation)
+            context.view_layer.update()
+        except (ValueError, ArithmeticError) as error:
+            log.error("AvP recentre: %s", error)
+            _report(self, {'ERROR'}, str(error))
             return {'CANCELLED'}
         return {'FINISHED'}
 
@@ -1122,6 +1176,15 @@ class AVP_BLENDER_PLUGIN_PT_module(_ObjectPanel, bpy.types.Panel):
     bl_label = "AvP Module"
     kind = "module"
 
+    def draw(self, context):
+        _ObjectPanel.draw(self, context)
+        box = self.layout.box()
+        box.label(text="Recentre shape: origin to the", icon='PIVOT_BOUNDBOX')
+        row = box.row(align=True)
+        for where, text in (('BOTTOM', "Bottom"), ('MIDDLE', "Middle"), ('TOP', "Top")):
+            row.operator("avp_blender_plugin.recentre_shape", text=text).where = where
+        box.label(text="The shape stays put; Export writes the new centre (one shape at a time).")
+
 
 class AVP_BLENDER_PLUGIN_PT_door(_ObjectPanel, bpy.types.Panel):
     bl_idname = "AVP_BLENDER_PLUGIN_PT_door"
@@ -1282,7 +1345,7 @@ class AVP_BLENDER_PLUGIN_PT_environment(bpy.types.Panel):
 
     @classmethod
     def poll(cls, context):
-        obj = context.object
+        obj = context.active_object
         if obj is None or not obj.get("avp_blender_plugin_source_text"):
             return False
         try:
@@ -1294,9 +1357,13 @@ class AVP_BLENDER_PLUGIN_PT_environment(bpy.types.Panel):
 
     def draw(self, context):
         try:
-            text, _, _, _ = object_source(context.object, display=True)
+            text, _, _, _ = object_source(context.active_object, display=True)
             self.layout.label(text=f"Source of selected object: {text.name}", icon='INFO')
-            settings = environment_info(context.object, display=True)
+            log_path = session_log.path()
+            if log_path:
+                self.layout.label(text=f"Log of this session: {os.path.basename(log_path)}", icon='TEXT')
+                self.layout.label(text=f"In: {os.path.dirname(log_path)}")
+            settings = environment_info(context.active_object, display=True)
             if settings is None:
                 self.layout.label(text="No AVPENVIR: runtime creates defaults, not a stored source record", icon='INFO')
                 sky, flags, spears = (200, 200, 200), 0x17, 30
@@ -1321,7 +1388,7 @@ class AVP_BLENDER_PLUGIN_PT_environment(bpy.types.Panel):
             log.error("AvP level-settings panel: %s", error)
             self.layout.label(text=str(error), icon='ERROR')
         try:
-            acoustics = environment_acoustics_info(context.object, display=True)
+            acoustics = environment_acoustics_info(context.active_object, display=True)
             box = self.layout.box()
             box.label(text="Stored environment acoustics (read only)", icon='INFO')
             if acoustics is None:
@@ -1352,9 +1419,9 @@ class AVP_BLENDER_PLUGIN_PT_decals(bpy.types.Panel):
 
     def draw(self, context):
         try:
-            text, _, _, _ = object_source(context.object, display=True)
+            text, _, _, _ = object_source(context.active_object, display=True)
             self.layout.label(text=f"Source of selected object: {text.name}", icon='INFO')
-            decals = decal_info(context.object, display=True)
+            decals = decal_info(context.active_object, display=True)
             if decals is None:
                 self.layout.label(text="No AVPDECAL in source SPECLOBJ", icon='INFO')
             else:
@@ -1395,9 +1462,9 @@ class AVP_BLENDER_PLUGIN_PT_lighting_sets(bpy.types.Panel):
 
     def draw(self, context):
         try:
-            text, _, _, _ = object_source(context.object, display=True)
+            text, _, _, _ = object_source(context.active_object, display=True)
             self.layout.label(text=f"Source of selected object: {text.name}", icon='INFO')
-            count, entries = lighting_sets_info(context.object, display=True)
+            count, entries = lighting_sets_info(context.active_object, display=True)
             self.layout.label(text=f"Showing first {len(entries)} of {count} source lighting sets")
             for index, (header, ambient, scale_count, scales) in enumerate(entries):
                 box = self.layout.box()
@@ -1437,7 +1504,7 @@ class AVP_BLENDER_PLUGIN_PT_reimport(bpy.types.Panel):
         self.layout.label(text="Old data is not migrated or exported.")
 
 
-classes = (AVP_BLENDER_PLUGIN_PT_reimport, AVP_BLENDER_PLUGIN_OT_edit_field, AVP_BLENDER_PLUGIN_OT_preview_door, AVP_BLENDER_PLUGIN_OT_play_door, AVP_BLENDER_PLUGIN_PT_module, AVP_BLENDER_PLUGIN_PT_door, AVP_BLENDER_PLUGIN_PT_lift,
+classes = (AVP_BLENDER_PLUGIN_PT_reimport, AVP_BLENDER_PLUGIN_OT_edit_field, AVP_BLENDER_PLUGIN_OT_recentre_shape, AVP_BLENDER_PLUGIN_OT_preview_door, AVP_BLENDER_PLUGIN_OT_play_door, AVP_BLENDER_PLUGIN_PT_module, AVP_BLENDER_PLUGIN_PT_door, AVP_BLENDER_PLUGIN_PT_lift,
            AVP_BLENDER_PLUGIN_PT_light, AVP_BLENDER_PLUGIN_PT_placed_light, AVP_BLENDER_PLUGIN_PT_generator, AVP_BLENDER_PLUGIN_PT_object, AVP_BLENDER_PLUGIN_PT_binary_switch,
            AVP_BLENDER_PLUGIN_PT_multi_switch, AVP_BLENDER_PLUGIN_PT_linked_switch, AVP_BLENDER_PLUGIN_PT_area_switch, AVP_BLENDER_PLUGIN_PT_fan,
            AVP_BLENDER_PLUGIN_PT_damage_volume, AVP_BLENDER_PLUGIN_PT_self_destruct, AVP_BLENDER_PLUGIN_PT_message, AVP_BLENDER_PLUGIN_PT_mission,

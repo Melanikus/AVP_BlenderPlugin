@@ -1,6 +1,7 @@
 """Build deterministic extension members from a clean local commit."""
 
 from pathlib import Path
+import re
 import subprocess
 import zipfile
 
@@ -12,7 +13,12 @@ PRIVATE_MARKERS = (
     b"AvP" + b"-builds-excluded",
     b"sol" + b"-blender-test",
     b"BlendRIF" + b"-work",
+    b"AvP" + b"-run",
+    # A user folder on any drive (a drive letter, a colon, then the Users folder) names a person's computer
+    b":" + b"\\" + b"Users" + b"\\",
+    b":" + b"/" + b"Users" + b"/",
 )
+DRIVE_USER_PATH = re.compile(rb"[a-z]:[\\/]+users[\\/]", re.IGNORECASE)
 
 
 def check_private_paths(entries):
@@ -20,6 +26,8 @@ def check_private_paths(entries):
     hits = []
     for name, data in entries:
         for line_number, line in enumerate(data.splitlines(), 1):
+            if DRIVE_USER_PATH.search(line):
+                hits.append(f"{name}:{line_number}: private drive-letter user path")
             for marker in markers:
                 if marker in line.lower():
                     hits.append(f"{name}:{line_number}: private path marker {marker.decode('ascii')}")
@@ -55,7 +63,7 @@ def build_archive(repo, target, ref="HEAD"):
     blobs = {name: git(repo, "show", f"{commit}:{name}") for name in source_names}
     check_private_paths(blobs.items())
     required = {"blender_manifest.toml", "LICENSE", "README.md", "INSTALL.md",
-                "docs/MVP.md"}
+                "docs/MVP.md", "docs/rif_geometry.jpg"}
     names = sorted(name for name in source_names
                    if name in required or
                    (name.endswith(".py") and ("/" not in name or name.startswith("parsers/"))))
