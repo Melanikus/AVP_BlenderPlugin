@@ -514,6 +514,14 @@ faces. Unsupported shapes still refuse through the existing RIM picker.
 Assignments and errors appear in Blender and in the session log.
 Texture picks and UV moves can share an export; new geometry stays separate.
 
+**UV editor follows the selected face's texture** is on by default. Within
+half a second the editor displays the active selected face's own RIM.
+With several faces selected, the active face wins; without an active
+selected face, the view is left alone. Turn the checkbox off to keep your
+current image. Automatic switches never assign textures, even with
+drop-down assignment enabled. A subsequent manual drop-down pick still
+assigns normally. Automatic switches are written to the session log.
+
 ### Object Properties alternative
 
 You need a level imported with **Strict Level Import** and

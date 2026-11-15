@@ -118,6 +118,7 @@ class UVTextureProof(unittest.TestCase):
         bpy.context.tool_settings.mesh_select_mode = (False, False, True)
         self.space.image = self.foreign
         bpy.context.scene.avp_blender_plugin_assign_image_dropdown = True
+        bpy.context.scene.avp_blender_plugin_follow_face_texture = True
         picker._editor_images.clear()
         picker._remember_editors()
         bpy.ops.object.mode_set(mode='EDIT')
@@ -193,6 +194,56 @@ class UVTextureProof(unittest.TestCase):
     def test_dropdown_assigns_via_registered_msgbus_callback(self):
         self.dropdown(self.choices["images"][self.bitmap])
         self.assert_pick()
+
+    def test_follow_active_face_switches_without_assigning_even_on_delayed_msgbus(self):
+        mesh = bmesh.from_edit_mesh(self.obj.data)
+        mesh.faces.ensure_lookup_table()
+        face = mesh.faces[self.faces[0]]
+        mesh.faces.active = face
+        with patch.object(picker, "execute_assignment", wraps=picker.execute_assignment) as assign:
+            picker._remember_editors()
+            self.assertEqual(self.space.image, self.choices["images"][self.old_bitmap])
+            self.dispatches[0]["notify"]()
+            assign.assert_not_called()
+        self.assertFalse(self.obj.get("avp_blender_plugin_texture_edits"))
+        self.assertEqual(self.exported_bytes(), self.input.read_bytes())
+        self.dropdown(self.choices["images"][self.bitmap])
+        self.assert_pick()
+
+    def test_follow_multiple_selected_faces_uses_active_face_not_selection_order(self):
+        mesh = bmesh.from_edit_mesh(self.obj.data)
+        mesh.faces.ensure_lookup_table()
+        other = next(face for face in mesh.faces
+                     if face.material_index != mesh.faces[self.faces[0]].material_index
+                     and self.obj.data.materials[face.material_index] is not None
+                     and any(node.type == 'TEX_IMAGE' and node.image in self.choices["images"].values()
+                             for node in self.obj.data.materials[face.material_index].node_tree.nodes))
+        other.select_set(True)
+        mesh.faces.active = other
+        expected = next(node.image for node in self.obj.data.materials[other.material_index].node_tree.nodes
+                        if node.type == 'TEX_IMAGE')
+        with self.override():
+            self.assertTrue(picker.follow_active_face(bpy.context))
+        self.assertEqual(self.space.image, expected)
+        self.dispatches[0]["notify"]()
+        self.assertFalse(self.obj.get("avp_blender_plugin_texture_edits"))
+        mesh.faces.active = mesh.faces[self.faces[0]]
+        picker._remember_editors()
+        self.assertEqual(self.space.image, self.choices["images"][self.old_bitmap])
+        self.assertFalse(self.obj.get("avp_blender_plugin_texture_edits"))
+
+    def test_follow_disabled_or_no_active_face_leaves_view_unchanged(self):
+        mesh = bmesh.from_edit_mesh(self.obj.data)
+        mesh.faces.ensure_lookup_table()
+        mesh.faces.active = mesh.faces[self.faces[0]]
+        bpy.context.scene.avp_blender_plugin_follow_face_texture = False
+        picker._remember_editors()
+        self.assertEqual(self.space.image, self.foreign)
+        bpy.context.scene.avp_blender_plugin_follow_face_texture = True
+        mesh.faces.active = None
+        picker._remember_editors()
+        self.assertEqual(self.space.image, self.foreign)
+        self.assertFalse(self.obj.get("avp_blender_plugin_texture_edits"))
 
     def test_foreign_image_only_changes_view(self):
         self.dropdown(None)

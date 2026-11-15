@@ -250,6 +250,10 @@ saved.
 
 ### 3. Give faces another texture from the level
 
+- In the UV Editor, **N > AvP** provides previews and assignment. By default
+  the displayed image follows the active selected face without assigning
+  anything. Disable **UV editor follows the selected face's texture** to
+  keep the current view; without an active selected face it stays unchanged.
 - Select faces in Edit Mode, then use **Choose Existing RIM Texture** to give
   them a texture that the level already uses.
 - Whole game polygons change: picking one triangle of a four-sided polygon

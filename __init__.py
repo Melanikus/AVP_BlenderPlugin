@@ -49,6 +49,9 @@ def register():
     bpy.types.Scene.avp_blender_plugin_auto_repeat_image = bpy.props.BoolProperty(
         name="Auto Repeat Image for tiled faces", default=True,
         description="Enable UV Repeat Image for selected imported polygons whose UVs extend outside 0..1; never disable it")
+    bpy.types.Scene.avp_blender_plugin_follow_face_texture = bpy.props.BoolProperty(
+        name="UV editor follows the selected face's texture", default=True,
+        description="Show the active selected face's RIM image without assigning a texture; leave the view unchanged without an active face")
     _uv_textures.start()
     bpy.types.TOPBAR_MT_file_import.append(_operator.menu_func_import)
     bpy.types.TOPBAR_MT_file_export.append(menu_export)
@@ -73,6 +76,7 @@ def unregister():
         bpy.utils.unregister_class(c)
     del bpy.types.Scene.avp_blender_plugin_assign_image_dropdown
     del bpy.types.Scene.avp_blender_plugin_auto_repeat_image
+    del bpy.types.Scene.avp_blender_plugin_follow_face_texture
     clear_display_cache()
     _session_log.stop()
 

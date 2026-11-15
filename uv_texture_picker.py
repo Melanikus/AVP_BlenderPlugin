@@ -14,6 +14,45 @@ from .utils import log
 
 _subscription_owner = object()
 _editor_images = {}
+_following_editors = set()
+
+
+def follow_active_face(context):
+    space, obj = context.space_data, context.object
+    if (space is None or space.type != 'IMAGE_EDITOR' or space.mode != 'UV'
+            or context.mode != 'EDIT_MESH'
+            or not context.scene.avp_blender_plugin_follow_face_texture
+            or obj is None or obj.type != 'MESH'
+            or not obj.get("avp_blender_plugin_source_text")):
+        return False
+    mesh = bmesh.from_edit_mesh(obj.data)
+    face = mesh.faces.active
+    if face is None or not face.select or face.hide or face.material_index >= len(obj.data.materials):
+        return False
+    material = obj.data.materials[face.material_index]
+    if material is None or material.node_tree is None:
+        return False
+    images = {node.image for node in material.node_tree.nodes
+              if node.type == 'TEX_IMAGE' and node.image is not None}
+    if len(images) != 1:
+        return False
+    image = next(iter(images))
+    if image == space.image:
+        return False
+    text, raw, tree, node = object_source(obj, display=True)
+    if classify(node, raw) != "module" or image not in catalogue(text)["images"].values():
+        return False
+    key = space.as_pointer()
+    _following_editors.add(key)
+    _editor_images[key] = image.as_pointer()
+    try:
+        space.image = image
+    finally:
+        _following_editors.discard(key)
+    message = f"UV editor followed {obj.name} active face {face.index}: {image.name}; no texture assigned"
+    log.info(message)
+    _write_log("INFO", message)
+    return True
 
 
 def repeat_for_selection(context):
@@ -69,6 +108,13 @@ def _remember_editors():
         if region is not None:
             with bpy.context.temp_override(window=window, area=area, region=region):
                 repeat_for_selection(bpy.context)
+                try:
+                    follow_active_face(bpy.context)
+                except (ValueError, RuntimeError, OSError) as error:
+                    message = f"UV active-face image: {error}"
+                    log.error(message)
+                    _write_log("ERROR", message)
+            current[key] = _editor_images.get(key, current[key])
     _editor_images.clear()
     _editor_images.update(current)
     return 0.5
@@ -80,7 +126,7 @@ def _image_changed():
         image = space.image.as_pointer() if space.image else 0
         previous = _editor_images.get(key, 0)
         _editor_images[key] = image
-        if image == previous or not image:
+        if image == previous or not image or key in _following_editors:
             continue
         region = next((region for region in area.regions if region.type == 'WINDOW'), None)
         if region is None:
@@ -110,6 +156,7 @@ def stop():
     if bpy.app.timers.is_registered(_remember_editors):
         bpy.app.timers.unregister(_remember_editors)
     _editor_images.clear()
+    _following_editors.clear()
 
 
 class AVP_BLENDER_PLUGIN_OT_load_uv_textures(bpy.types.Operator):
@@ -195,6 +242,7 @@ class AVP_BLENDER_PLUGIN_PT_uv_textures(bpy.types.Panel):
         layout = self.layout
         layout.prop(context.scene, "avp_blender_plugin_assign_image_dropdown")
         layout.prop(context.scene, "avp_blender_plugin_auto_repeat_image")
+        layout.prop(context.scene, "avp_blender_plugin_follow_face_texture")
         source = context.object.get("avp_blender_plugin_source_text")
         choices = _catalogues.get(source)
         if choices is None:
