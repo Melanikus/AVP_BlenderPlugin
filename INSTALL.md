@@ -140,6 +140,8 @@ add-on is still installed. See [Upgrade](#upgrade).
 - The Object tab of the Properties editor holds the AvP panel of the active
   object and the panel **AvP Existing RIM Textures**. They appear only for
   objects imported with **Strict Level Import** on.
+- The **UV Editor > N sidebar > AvP > Level RIM Textures** assigns level
+  textures where you map UVs; see [UV-editor texture assignment](#uv-editor-texture-assignment).
 
 That is all. The add-on has no tab in the 3D View sidebar, no preferences, no
 keyboard shortcuts and no Edit Mode menus. Its options are in the import file
@@ -472,6 +474,25 @@ another `.blend` file stops it. Messages you may see:
 ---
 
 ## Give faces another texture from the level
+
+### UV-editor texture assignment
+
+Select an imported ordinary module mesh, enter Edit Mode, and select faces.
+In the **UV Editor**, open **N sidebar > AvP > Level RIM Textures**.
+Click **Load Level RIM Previews** once for that level, then click a named
+thumbnail. Assignment changes whole source polygons (both triangles of an
+imported quad), preserving their UV texels and leaving unrelated faces alone.
+
+**Assign from the image drop-down** is on by default. Picking one of this
+level's RIM images in the UV header assigns it to the selected faces too.
+Other images only change the view. Turn the checkbox off to browse RIMs
+without assigning them. The panel appears only for imported meshes, and
+assignment is disabled with a reason outside Edit Mode or without selected
+faces. Unsupported shapes still refuse through the existing RIM picker.
+Assignments and errors appear in Blender and in the session log.
+Texture picks and UV moves can share an export; new geometry stays separate.
+
+### Object Properties alternative
 
 You need a level imported with **Strict Level Import** and
 **Import Materials** on, with its game data found.
