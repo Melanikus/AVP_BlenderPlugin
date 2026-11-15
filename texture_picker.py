@@ -14,6 +14,7 @@ from .level_validation import read_level
 from .materials import apply_matchimg_rule, get_material
 from .memory_textures import MemoryTextures, MAX_IMAGE_MEMORY
 from .raw_rif import source_from_text, walk_tree, reader_boundary
+from .session_log import report as _report
 from .utils import log
 from .vertex_export import (
     _array_bytes, _uv_bytes, baseline_coordinates, coordinate_bytes, export_bytes, mesh_signature,
@@ -290,7 +291,7 @@ class AVP_BLENDER_PLUGIN_OT_texture_picker(bpy.types.Operator):
             self.bitmap = choices["items"][0][0]
         except (ValueError, RuntimeError, OSError) as error:
             log.error("RIM picker: %s", error)
-            self.report({'ERROR'}, str(error))
+            _report(self, {'ERROR'}, str(error))
             return {'CANCELLED'}
         return context.window_manager.invoke_props_dialog(self, width=650)
 
@@ -312,12 +313,12 @@ class AVP_BLENDER_PLUGIN_OT_texture_picker(bpy.types.Operator):
             count = assign_texture(context, int(self.bitmap))
         except (ValueError, RuntimeError, OSError) as error:
             log.error("RIM assignment: %s", error)
-            self.report({'ERROR'}, str(error))
+            _report(self, {'ERROR'}, str(error))
             return {'CANCELLED'}
         finally:
             if restore and context.mode != 'EDIT_MESH':
                 bpy.ops.object.mode_set(mode='EDIT')
-        self.report({'INFO'}, f"Assigned level bitmap {self.bitmap} to {count} source polygon(s)")
+        _report(self, {'INFO'}, f"Assigned level bitmap {self.bitmap} to {count} source polygon(s)")
         return {'FINISHED'}
 
 

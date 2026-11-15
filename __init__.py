@@ -22,6 +22,7 @@ from . import avp_lighting as _lighting
 from .avp_fields import clear_display_cache
 from .vertex_export import EXPORT_OT_avp_blender_plugin, menu_export
 from . import texture_picker as _textures
+from . import session_log as _session_log
 
 classes = _operator.classes + _panels.classes + _lighting.classes + _textures.classes + (EXPORT_OT_avp_blender_plugin,)
 
@@ -36,6 +37,8 @@ def _clear_sources_after_load(*args):
 
 def register():
     """Register operators, object panels and import/export menu entries."""
+    _session_log.start(__package__)
+    _session_log.watch_operators(classes)
     for c in classes:
         bpy.utils.register_class(c)
     bpy.types.TOPBAR_MT_file_import.append(_operator.menu_func_import)
@@ -59,6 +62,7 @@ def unregister():
     for c in reversed(classes):
         bpy.utils.unregister_class(c)
     clear_display_cache()
+    _session_log.stop()
 
 
 if __name__ == "__main__":

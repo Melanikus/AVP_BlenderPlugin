@@ -54,6 +54,7 @@ from ._version import __version_str__
 from .discovery import discover_paths
 from .memory_textures import MemoryTextures, find_game_root
 from .rif_loader import load_rif_auto, build_rif_index
+from .session_log import report as _report
 from .utils import log, configure_logging
 from .config import (
     BITMAP_MODES, PIVOT_MODES, EXT_RIF_STRATEGIES, ORPHAN_MODES,
@@ -342,7 +343,7 @@ class IMPORT_OT_avp_blender_plugin(bpy.types.Operator):
                 context.scene.render.fps = saved_fps
                 log.info(f"Restored scene FPS to {saved_fps} "
                          f"(import did not complete)")
-            self.report({'ERROR'}, f"{os.path.basename(self.filepath)}: {type(e).__name__}: {e}")
+            _report(self, {'ERROR'}, f"{os.path.basename(self.filepath)}: {type(e).__name__}: {e}")
             return {'CANCELLED'}
 
     def _run_pipeline(self, context, saved_fps):
@@ -374,7 +375,7 @@ class IMPORT_OT_avp_blender_plugin(bpy.types.Operator):
                     raise ValueError("RIF input size exceeds bounds")
                 raw = f.read(32 * 1024 * 1024 + 1)
         except OSError as e:
-            self.report({'ERROR'}, f"Read error: {e}")
+            _report(self, {'ERROR'}, f"Read error: {e}")
             return {'CANCELLED'}
 
         discovered = discover_paths(self.filepath)
@@ -383,7 +384,7 @@ class IMPORT_OT_avp_blender_plugin(bpy.types.Operator):
 
         decoded = load_rif_auto(raw, verbose=True)
         if decoded is None:
-            self.report({'ERROR'}, "Unknown format")
+            _report(self, {'ERROR'}, "Unknown format")
             return {'CANCELLED'}
 
         base = os.path.splitext(os.path.basename(self.filepath))[0]
@@ -399,7 +400,7 @@ class IMPORT_OT_avp_blender_plugin(bpy.types.Operator):
         raw_tree = read_tree(decoded)
 
         if self.diagnostics_mode:
-            self.report({'INFO'}, "Diagnostics complete.")
+            _report(self, {'INFO'}, "Diagnostics complete.")
             return {'FINISHED'}
 
         optional = {"missing_ext"} if self.mark_missing_ext else set()
@@ -532,7 +533,7 @@ class IMPORT_OT_avp_blender_plugin(bpy.types.Operator):
                             area.spaces.active.shading.use_scene_lights = True
                         visible_views += 1
             if visible_views:
-                self.report({'INFO'}, "Textures visible: switched the 3D view to Material Preview")
+                _report(self, {'INFO'}, "Textures visible: switched the 3D view to Material Preview")
             return {'FINISHED'}
 
         t = time.perf_counter()

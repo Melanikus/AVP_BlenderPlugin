@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A log file for every Blender session.** In the extension's own user folder (`logs`, made by Blender for the add-on), one
+  `session-<date>-<time>-<id>.log` per Blender session holds, with the time of each line, every message an operator showed
+  you, every warning and error the add-on logged, and the traceback of any operator that failed with an error nobody
+  caught. Lines are cleaned of control characters, the file stops at 5 MB, a repeating message is written at 1, 10, 100, ...
+  times, and the newest 20 session files are kept. The AvP Level Settings panel shows where the file is.
+
 ## [1.3.2] - 2026-10-26
 
 ### Fixed

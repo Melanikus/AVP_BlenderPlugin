@@ -21,6 +21,7 @@ from .geometry import extract_polygons
 from .level_validation import read_level, check_geometry_range
 from .parsers.shapes import parse_objhead1
 from .raw_rif import MAX_RIF_BYTES, source_from_text, walk_tree, reader_boundary
+from .session_log import report as _report
 from .utils import log
 
 
@@ -599,7 +600,7 @@ class EXPORT_OT_avp_blender_plugin(bpy.types.Operator):
             self.filepath = suggested_export_path(filepath)
         except ValueError as error:
             log.error("RIF export source: %s", error)
-            self.report({'ERROR'}, str(error))
+            _report(self, {'ERROR'}, str(error))
             return {'CANCELLED'}
         context.window_manager.fileselect_add(self)
         return {'RUNNING_MODAL'}
@@ -620,7 +621,7 @@ class EXPORT_OT_avp_blender_plugin(bpy.types.Operator):
             backup, created = _write_level(target, data)
         except (ValueError, RuntimeError, OSError, struct.error) as error:
             log.error("RIF export failed: %s: %s", self.filepath, error)
-            self.report({'ERROR'}, f"{os.path.basename(self.filepath)}: {error}")
+            _report(self, {'ERROR'}, f"{os.path.basename(self.filepath)}: {error}")
             return {'CANCELLED'}
         finally:
             if restore_edit_mode and context.mode != 'EDIT_MESH':
@@ -629,7 +630,7 @@ class EXPORT_OT_avp_blender_plugin(bpy.types.Operator):
         if backup is not None:
             action = "backup made" if created else "first backup kept"
             backup_report = f"; {action}: {os.path.basename(backup)}"
-        self.report({'INFO'}, f"Saved {os.path.basename(target)}{backup_report}; module vertex, UV or texture export")
+        _report(self, {'INFO'}, f"Saved {os.path.basename(target)}{backup_report}; module vertex, UV or texture export")
         return {'FINISHED'}
 
 

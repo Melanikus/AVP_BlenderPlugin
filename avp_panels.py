@@ -4,11 +4,14 @@
 
 from array import array
 import math
+import os
 import struct
 import time
 
 import bpy
 from mathutils import Vector
+
+from . import session_log
 
 from .avp_fields import (
     FIELDS, INTEGER_FIELDS, applicable_fields, classify, field_node, field_value,
@@ -17,6 +20,7 @@ from .avp_fields import (
     object_source, particle_info, placed_light_info, platform_lift_info, read_edits, self_destruct_info, set_field, simple_info, sound_info, start_info, stdlight_info,
     switch_door_info, teleport_info, track_destruction_info, track_info, track_sounds_info,
 )
+from .session_log import report as _report
 from .utils import log
 from .geometry import quat_to_mat
 from .parsers.shapes import parse_objhead1
@@ -234,7 +238,7 @@ class AVP_BLENDER_PLUGIN_OT_play_door(bpy.types.Operator):
         global _door_playback, _door_playback_error
         if _door_playback is not None:
             if not stop_door_playback():
-                self.report({'ERROR'}, _door_playback_error)
+                _report(self, {'ERROR'}, _door_playback_error)
                 return {'CANCELLED'}
             return {'FINISHED'}
         try:
@@ -254,10 +258,10 @@ class AVP_BLENDER_PLUGIN_OT_play_door(bpy.types.Operator):
             bpy.app.timers.register(playback.callback, first_interval=0.0)
             _door_playback = playback
             _door_playback_error = ""
-            self.report({'INFO'}, "Door interpolation: one second each way, then starting pose restored")
+            _report(self, {'INFO'}, "Door interpolation: one second each way, then starting pose restored")
         except (KeyError, ValueError, RuntimeError, struct.error) as error:
             log.error("AvP door playback: %s", error)
-            self.report({'ERROR'}, str(error))
+            _report(self, {'ERROR'}, str(error))
             return {'CANCELLED'}
         return {'FINISHED'}
 
@@ -286,10 +290,10 @@ class AVP_BLENDER_PLUGIN_OT_preview_door(bpy.types.Operator):
             obj.data.update()
             _mark_door_preview(obj, self.target_id)
             _door_playback_error = ""
-            self.report({'INFO'}, "Door shape previewed; restore Base shape before vertex export")
+            _report(self, {'INFO'}, "Door shape previewed; restore Base shape before vertex export")
         except (KeyError, ValueError, RuntimeError, struct.error) as error:
             log.error("AvP door preview: %s", error)
-            self.report({'ERROR'}, str(error))
+            _report(self, {'ERROR'}, str(error))
             return {'CANCELLED'}
         finally:
             if restore_edit:
@@ -328,7 +332,7 @@ class AVP_BLENDER_PLUGIN_OT_edit_field(bpy.types.Operator):
             return context.window_manager.invoke_props_dialog(self)
         except (ValueError, KeyError) as error:
             log.error("AvP setting: %s", error)
-            self.report({'ERROR'}, str(error))
+            _report(self, {'ERROR'}, str(error))
             return {'CANCELLED'}
 
     def draw(self, context):
@@ -344,7 +348,7 @@ class AVP_BLENDER_PLUGIN_OT_edit_field(bpy.types.Operator):
             set_field(context.object, self.code, value)
         except (KeyError, ValueError, RuntimeError) as error:
             log.error("AvP setting: %s", error)
-            self.report({'ERROR'}, str(error))
+            _report(self, {'ERROR'}, str(error))
             return {'CANCELLED'}
         return {'FINISHED'}
 
@@ -1296,6 +1300,10 @@ class AVP_BLENDER_PLUGIN_PT_environment(bpy.types.Panel):
         try:
             text, _, _, _ = object_source(context.object, display=True)
             self.layout.label(text=f"Source of selected object: {text.name}", icon='INFO')
+            log_path = session_log.path()
+            if log_path:
+                self.layout.label(text=f"Log of this session: {os.path.basename(log_path)}", icon='TEXT')
+                self.layout.label(text=f"In: {os.path.dirname(log_path)}")
             settings = environment_info(context.object, display=True)
             if settings is None:
                 self.layout.label(text="No AVPENVIR: runtime creates defaults, not a stored source record", icon='INFO')
