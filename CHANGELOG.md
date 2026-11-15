@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (the picked ones included; they are kept in the new image's space) and a vertex move used to be refused as "export
   separately". They write different bytes, so one export now takes all of them. Picking a texture after moving UVs keeps
   the moves. New geometry is still exported on its own.
+- **Recentre Shape (the old editor's Shape > Recentre Shape).** On an AvP Module's panel, Bottom / Middle / Top moves the
+  object's origin to that point over the middle of the module's box; the shape stays where it is. Export then writes the new
+  centre: the object's position becomes that point and every vertex, the extents, the radius and the stored centre move the
+  other way, so nothing moves in the level. One unrotated, unshared module at a time, and not together with other edits.
 
 ### Fixed
 

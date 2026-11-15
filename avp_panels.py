@@ -9,7 +9,7 @@ import struct
 import time
 
 import bpy
-from mathutils import Vector
+from mathutils import Matrix, Vector
 
 from . import session_log
 
@@ -348,6 +348,56 @@ class AVP_BLENDER_PLUGIN_OT_edit_field(bpy.types.Operator):
             set_field(context.object, self.code, value)
         except (KeyError, ValueError, RuntimeError) as error:
             log.error("AvP setting: %s", error)
+            _report(self, {'ERROR'}, str(error))
+            return {'CANCELLED'}
+        return {'FINISHED'}
+
+
+class AVP_BLENDER_PLUGIN_OT_recentre_shape(bpy.types.Operator):
+    bl_idname = "avp_blender_plugin.recentre_shape"
+    bl_label = "Recentre shape"
+    bl_description = ("Move the origin of this module to the bottom, middle or top of its box, over the middle of it. The shape "
+                      "stays where it is in the level; Export writes the new centre (the old editor's Recentre Shape)")
+    bl_options = {'REGISTER', 'UNDO'}
+    where: bpy.props.EnumProperty(
+        name="Where", default='BOTTOM',
+        items=(('BOTTOM', "Bottom", "The lowest point of the module"),
+               ('MIDDLE', "Middle", "The middle of the module's box"),
+               ('TOP', "Top", "The highest point of the module")))
+
+    @classmethod
+    def poll(cls, context):
+        obj = context.object
+        return obj is not None and obj.type == 'MESH' and bool(obj.get("avp_blender_plugin_source_text"))
+
+    def execute(self, context):
+        obj = context.object
+        try:
+            if obj.mode != 'OBJECT':
+                raise ValueError("Leave Edit Mode first")
+            if obj.parent is not None or len(obj.constraints):
+                raise ValueError("A parented or constrained object cannot be recentred")
+            mesh = obj.data
+            if mesh.users != 1:
+                raise ValueError("The mesh is shared with another object; make it single user first")
+            if not len(mesh.vertices):
+                raise ValueError("The shape has no vertices")
+            world = obj.matrix_world.copy()
+            points = [world @ vertex.co for vertex in mesh.vertices]
+            low = Vector((min(p.x for p in points), min(p.y for p in points), min(p.z for p in points)))
+            high = Vector((max(p.x for p in points), max(p.y for p in points), max(p.z for p in points)))
+            height = {'BOTTOM': low.z, 'MIDDLE': (low.z + high.z) / 2.0, 'TOP': high.z}[self.where]
+            target = Vector(((low.x + high.x) / 2.0, (low.y + high.y) / 2.0, height))
+            if not all(math.isfinite(value) for value in target):
+                raise ValueError("The shape's box is not finite")
+            # The mesh moves the opposite way to the origin, so the shape stays where it is
+            local = world.inverted() @ target
+            mesh.transform(Matrix.Translation(-local))
+            mesh.update()
+            obj.location = obj.location + (target - world.translation)
+            context.view_layer.update()
+        except (ValueError, ArithmeticError) as error:
+            log.error("AvP recentre: %s", error)
             _report(self, {'ERROR'}, str(error))
             return {'CANCELLED'}
         return {'FINISHED'}
@@ -1126,6 +1176,15 @@ class AVP_BLENDER_PLUGIN_PT_module(_ObjectPanel, bpy.types.Panel):
     bl_label = "AvP Module"
     kind = "module"
 
+    def draw(self, context):
+        _ObjectPanel.draw(self, context)
+        box = self.layout.box()
+        box.label(text="Recentre shape: origin to the", icon='PIVOT_BOUNDBOX')
+        row = box.row(align=True)
+        for where, text in (('BOTTOM', "Bottom"), ('MIDDLE', "Middle"), ('TOP', "Top")):
+            row.operator("avp_blender_plugin.recentre_shape", text=text).where = where
+        box.label(text="The shape stays put; Export writes the new centre (one shape at a time).")
+
 
 class AVP_BLENDER_PLUGIN_PT_door(_ObjectPanel, bpy.types.Panel):
     bl_idname = "AVP_BLENDER_PLUGIN_PT_door"
@@ -1445,7 +1504,7 @@ class AVP_BLENDER_PLUGIN_PT_reimport(bpy.types.Panel):
         self.layout.label(text="Old data is not migrated or exported.")
 
 
-classes = (AVP_BLENDER_PLUGIN_PT_reimport, AVP_BLENDER_PLUGIN_OT_edit_field, AVP_BLENDER_PLUGIN_OT_preview_door, AVP_BLENDER_PLUGIN_OT_play_door, AVP_BLENDER_PLUGIN_PT_module, AVP_BLENDER_PLUGIN_PT_door, AVP_BLENDER_PLUGIN_PT_lift,
+classes = (AVP_BLENDER_PLUGIN_PT_reimport, AVP_BLENDER_PLUGIN_OT_edit_field, AVP_BLENDER_PLUGIN_OT_recentre_shape, AVP_BLENDER_PLUGIN_OT_preview_door, AVP_BLENDER_PLUGIN_OT_play_door, AVP_BLENDER_PLUGIN_PT_module, AVP_BLENDER_PLUGIN_PT_door, AVP_BLENDER_PLUGIN_PT_lift,
            AVP_BLENDER_PLUGIN_PT_light, AVP_BLENDER_PLUGIN_PT_placed_light, AVP_BLENDER_PLUGIN_PT_generator, AVP_BLENDER_PLUGIN_PT_object, AVP_BLENDER_PLUGIN_PT_binary_switch,
            AVP_BLENDER_PLUGIN_PT_multi_switch, AVP_BLENDER_PLUGIN_PT_linked_switch, AVP_BLENDER_PLUGIN_PT_area_switch, AVP_BLENDER_PLUGIN_PT_fan,
            AVP_BLENDER_PLUGIN_PT_damage_volume, AVP_BLENDER_PLUGIN_PT_self_destruct, AVP_BLENDER_PLUGIN_PT_message, AVP_BLENDER_PLUGIN_PT_mission,
