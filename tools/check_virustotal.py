@@ -60,7 +60,9 @@ COUNTS_KNOWN = COUNTS_THAT_ARE_ANSWERS + ("timeout", "confirmed-timeout", "failu
 
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 ANALYSIS_ID = re.compile(r"[A-Za-z0-9+/=]{1,200}\Z")
-PACKAGE_NAME = re.compile(r"avp_blender_plugin-[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.zip\Z")
+VERSION_PATTERN = (r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"
+                   r"(?:-[0-9A-Za-z]{1,16}(?:\.[0-9A-Za-z]{1,16}){0,3})?")
+PACKAGE_NAME = re.compile(r"avp_blender_plugin-" + VERSION_PATTERN + r"\.zip\Z")
 RELEASE_FOLDER = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "release")
 
 
@@ -190,7 +192,7 @@ def say_counted(found, report):
 
 def check_package(name, sha256, folder=RELEASE_FOLDER):
     if not isinstance(name, str) or not PACKAGE_NAME.fullmatch(name):
-        refuse("package name must be avp_blender_plugin-MAJOR.MINOR.PATCH.zip, with no path")
+        refuse("package name must be a strict avp_blender_plugin-MAJOR.MINOR.PATCH[-PRERELEASE].zip, with no path or build metadata")
     zip_path = release_file(os.path.basename(name), folder)
     if not os.path.isfile(zip_path):
         refuse("the zip to send is not there")

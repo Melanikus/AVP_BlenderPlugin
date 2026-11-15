@@ -179,7 +179,7 @@ class Answers(unittest.TestCase):
         self.write(self.lookup())
         self.assertRefused("has to be a SHA-256", "--answer", "--kind", "lookup", "--sha256", "XYZ")
 
-    def test_package_ready_when_hash_matches(self):
+    def test_package_stable_1_3_75_accepted(self):
         zip_path = os.path.join(self.folder.name, PACKAGE)
         with open(zip_path, "wb") as handle:
             handle.write(b"zip bytes")
@@ -195,7 +195,7 @@ class Answers(unittest.TestCase):
 
     def test_outside_and_parent_escape_refused_before_open(self):
         for name in ("../" + PACKAGE, "..\\" + PACKAGE, os.path.join(self.folder.name, PACKAGE),
-                     "wrong.zip", "avp_blender_plugin-1000.1.1.zip"):
+                     "wrong.zip", "avp_blender_plugin-01.1.1.zip"):
             with self.subTest(name=name), mock.patch("builtins.open", side_effect=AssertionError("opened path")):
                 with self.assertRaisesRegex(vt.Refused, "package name must"):
                     vt.check_package(name, SHA, self.folder.name)
@@ -230,6 +230,48 @@ class Answers(unittest.TestCase):
             with mock.patch("builtins.open", side_effect=AssertionError("opened oversized file")):
                 with self.assertRaises(vt.Refused):
                     call()
+
+    def assertBadPackage(self, name):
+        with mock.patch("builtins.open", side_effect=AssertionError("opened invalid name")):
+            with self.assertRaisesRegex(vt.Refused, "package name must"):
+                vt.check_package(name, SHA, self.folder.name)
+
+    def test_package_alpha_accepted(self):
+        import hashlib
+        name = "avp_blender_plugin-1.0.0-alpha.0.zip"
+        with open(os.path.join(self.folder.name, name), "wb") as handle:
+            handle.write(b"alpha bytes")
+        self.assertAnswer("ANSWER: ready", "--package", name, "--sha256", hashlib.sha256(b"alpha bytes").hexdigest())
+
+    def test_package_parent_refused(self):
+        self.assertBadPackage("../" + PACKAGE)
+
+    def test_package_slash_refused(self):
+        self.assertBadPackage("avp_blender_plugin-1.0.0-alpha/0.zip")
+
+    def test_package_backslash_refused(self):
+        self.assertBadPackage(r"avp_blender_plugin-1.0.0-alpha\0.zip")
+
+    def test_package_leading_zero_refused(self):
+        for version in ("01.0.0", "1.00.0", "1.0.00"):
+            self.assertBadPackage(f"avp_blender_plugin-{version}.zip")
+
+    def test_package_empty_prerelease_part_refused(self):
+        for version in ("1.0.0-", "1.0.0-alpha..0", "1.0.0-.alpha"):
+            self.assertBadPackage(f"avp_blender_plugin-{version}.zip")
+
+    def test_package_too_many_prerelease_parts_refused(self):
+        self.assertBadPackage("avp_blender_plugin-1.0.0-a.b.c.d.e.zip")
+
+    def test_package_too_long_prerelease_part_refused(self):
+        self.assertBadPackage("avp_blender_plugin-1.0.0-" + "a" * 17 + ".zip")
+
+    def test_package_build_metadata_refused(self):
+        self.assertBadPackage("avp_blender_plugin-1.0.0-alpha.0+build.zip")
+
+    def test_package_prerelease_limits_accepted(self):
+        name = "avp_blender_plugin-1.0.0-" + "a" * 16 + ".B.3.D.zip"
+        self.assertIsNotNone(vt.PACKAGE_NAME.fullmatch(name))
 
 
 class WorkflowPermissions(unittest.TestCase):
