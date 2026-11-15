@@ -267,7 +267,7 @@ jobs:
           set -euo pipefail
           tip=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
           [ "$tip" = "$GITHUB_SHA" ] || { echo "::error::main has moved on since this was checked"; exit 1; }
-          [[ "$VERSION" =~ ^(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})$ ]] || { echo "::error::The version is not one this makes"; exit 1; }
+          [[ "$VERSION" =~ ^(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})(-[0-9A-Za-z]{1,16}(\.[0-9A-Za-z]{1,16}){0,3})?$ ]] || { echo "::error::The version is not one this makes"; exit 1; }
           name="avp_blender_plugin-$VERSION.zip"
           [ "$(wc -l < release/SHA256SUMS)" -eq 1 ] || { echo "::error::SHA256SUMS should have one line"; exit 1; }
           [ "$(cat release/SHA256SUMS)" = "$BUILT  $name" ] || { echo "::error::SHA256SUMS is not the build's"; exit 1; }
