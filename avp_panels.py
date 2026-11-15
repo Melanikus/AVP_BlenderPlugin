@@ -323,6 +323,11 @@ class AVP_BLENDER_PLUGIN_OT_edit_field(bpy.types.Operator):
             field = FIELDS[self.code]
             target = field_node(node, raw, field)
             current = field_value(raw, target, field, read_edits(text))
+            if classify(node, raw) in ("light", "placed_light") and field.code in (
+                    "position_x", "position_y", "position_z", "prelight_x", "prelight_y", "prelight_z"):
+                from .light_export import current_position
+                _, _, record = source_from_text(text)
+                current = current_position(context.object, raw, node, record["scale"])["xyz".index(field.code[-1])]
             if field in INTEGER_FIELDS:
                 self.integer_value = int(current)
             else:
@@ -346,6 +351,9 @@ class AVP_BLENDER_PLUGIN_OT_edit_field(bpy.types.Operator):
                 raise ValueError("Select an imported AvP object")
             value = self.integer_value if FIELDS[self.code] in INTEGER_FIELDS else self.value
             set_field(context.object, self.code, value)
+            text, raw, tree, node = object_source(context.object)
+            if classify(node, raw) in ("light", "placed_light"):
+                _report(self, {'INFO'}, f"Light setting ready for export: {FIELDS[self.code].name} = {value:g}")
         except (KeyError, ValueError, RuntimeError) as error:
             log.error("AvP setting: %s", error)
             _report(self, {'ERROR'}, str(error))
@@ -403,8 +411,8 @@ class AVP_BLENDER_PLUGIN_OT_recentre_shape(bpy.types.Operator):
         return {'FINISHED'}
 
 
-def _draw_light_set_source(box, header, ambient):
-    box.label(text="Source lighting set (read only)", icon='INFO')
+def _draw_light_set_source(box, header, ambient, editable=False):
+    box.label(text="Source lighting set (ambience editable)" if editable else "Source lighting set (read only)", icon='INFO')
     if header is None:
         box.label(text="No LTSETHDR: audited game setup skips this set")
     else:
@@ -420,7 +428,8 @@ def _draw_light_set_source(box, header, ambient):
         box.label(text=f"Stored ambience scalar (signed int32): {value}")
         box.label(text=f"Opaque ambience trailing bytes: {trailing}")
     box.label(text="Game uses the first NORMALLT set under the environment; this is source inspection")
-    box.label(text="This inspection does not select active sets, change World, rebake or export")
+    box.label(text="Ambience edits export; set name/spares retained; no World change or rebake" if editable
+              else "This inspection does not select active sets, change World, rebake or export")
 
 
 class _ObjectPanel:
@@ -446,6 +455,8 @@ class _ObjectPanel:
             text, raw, tree, node = object_source(context.object, display=True)
             edits = read_edits(text)
             for field in applicable_fields(node, raw):
+                if self.kind == "placed_light" and field.identifier == b"AVPSTRAT":
+                    continue
                 try:
                     target = field_node(node, raw, field)
                 except ValueError as error:
@@ -454,6 +465,11 @@ class _ObjectPanel:
                     row.label(text=str(error), icon='INFO')
                     continue
                 value = field_value(raw, target, field, edits)
+                if self.kind in ("light", "placed_light") and field.code in (
+                        "position_x", "position_y", "position_z", "prelight_x", "prelight_y", "prelight_z"):
+                    from .light_export import current_position
+                    _, _, record = source_from_text(text)
+                    value = current_position(context.object, raw, node, record["scale"])["xyz".index(field.code[-1])]
                 label = field.name if field.mask else f"{field.name}: {value:g}"
                 button = self.layout.operator("avp_blender_plugin.edit_field", text=label,
                                               icon=('CHECKBOX_HLT' if value else 'CHECKBOX_DEHLT') if field.mask else 'GREASEPENCIL')
@@ -1085,14 +1101,15 @@ class _ObjectPanel:
                     box.label(text=f"Stored RGB: {light.colour}; runtime scales: {tuple(c * 257 for c in light.colour)}")
                     box.label(text=f"Stored spread: {light.spread}; engine/local flags: 0x{light.engine_flags & 0xffffffff:08x}/0x{light.local_flags & 0xffffffff:08x}")
                     box.label(text=f"Runtime prelit-source flag: {not bool(light.local_flags & 0x40)}")
-                    box.label(text="Orientation, number, spread, flags and spare words remain read-only", icon='INFO')
-                    box.label(text="XYZ/RGB edits staged; Refresh optional lighting preview; no marker movement, rebake or export")
+                    box.label(text="Orientation, number and spare words remain read-only", icon='INFO')
+                    box.label(text="Light moves and panel edits export; Blender Light data is preview only")
+                    box.label(text="Runtime off / prelit contribution: rebake required; alpha does not rebake")
                 except ValueError as error:
                     log.error("AvP editor-light panel: %s", error)
                     self.layout.label(text=str(error), icon='ERROR')
                 try:
                     header, ambient = light_set_info(context.object, display=True)
-                    _draw_light_set_source(self.layout.box(), header, ambient)
+                    _draw_light_set_source(self.layout.box(), header, ambient, editable=True)
                 except ValueError as error:
                     log.error("AvP lighting-set panel: %s", error)
                     self.layout.label(text=str(error), icon='ERROR')
@@ -1115,8 +1132,8 @@ class _ObjectPanel:
                     if 0 in values[7:12]:
                         box.label(text="Source zero loads as 1 millisecond; source bytes are not clamped", icon='INFO')
                     box.label(text=f"Spread: {values[1]}; engine/local flags: 0x{values[5] & 0xffffffff:08x}/0x{values[6] & 0xffffffff:08x}")
-                    box.label(text=f"Opaque extra words retained: {count}; pattern/transition/flags remain read-only")
-                    box.label(text="Colour/time edits staged; Refresh optional static lighting preview; no SHPVTINT rebake or export")
+                    box.label(text=f"Opaque extra words retained: {count}; type/transition/flags export")
+                    box.label(text="Move fixture or emitter; colour/time edits export; no SHPVTINT rebake")
                 except ValueError as error:
                     log.error("AvP placed-light-cycle panel: %s", error)
                     self.layout.label(text=str(error), icon='ERROR')
@@ -1159,12 +1176,15 @@ class _ObjectPanel:
                         self.layout.label(text="PLOBJLIT dispatch precedes ordinary scenery")
                     else:
                         self.layout.label(text="Pickup type/subtype may be remapped by runtime; no inventory simulation")
-                    self.layout.label(text="Only integrity low byte staged; type/mass/flags/targets remain read-only")
+                    self.layout.label(text="Scenery type/mass/integrity/targets remain read-only; light fields above export"
+                                           if self.kind == "placed_light" else
+                                           "Only integrity low byte staged; type/mass/flags/targets remain read-only")
                     self.layout.label(text="No video playback, damage/explosion simulation or scenery export")
                 except ValueError as error:
                     log.error("AvP simple-scenery panel: %s", error)
                     self.layout.label(text=str(error), icon='ERROR')
-            self.layout.label(text="Panel edits are staged, not exported", icon='INFO')
+            self.layout.label(text="Light edits export with geometry/UV/textures; no rebake" if self.kind in ("light", "placed_light")
+                              else "Panel edits are staged, not exported", icon='INFO')
             self.layout.operator("export_scene.avp_blender_plugin", text="Export level (geometry / textures)", icon='EXPORT')
         except (ValueError, struct.error, IndexError, KeyError) as error:
             log.error("AvP panel: %s", error)
@@ -1206,7 +1226,7 @@ class AVP_BLENDER_PLUGIN_PT_light(_ObjectPanel, bpy.types.Panel):
 
 class AVP_BLENDER_PLUGIN_PT_placed_light(_ObjectPanel, bpy.types.Panel):
     bl_idname = "AVP_BLENDER_PLUGIN_PT_placed_light"
-    bl_label = "AvP Runtime Light"
+    bl_label = "AvP Placed Light Object"
     kind = "placed_light"
 
 

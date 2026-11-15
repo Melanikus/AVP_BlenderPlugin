@@ -9,7 +9,7 @@ object. It can also save a few kinds of edits to a level's modules into a new
 AVP_BlenderPlugin is a fork of AdiJager's BlendRIF, licensed under
 GPL-3.0-or-later. AdiJager's copyright and original credit are kept.
 
-This page describes version 1.0.0-alpha.1. It needs Blender 5.2.0 or newer.
+This page describes version 1.0.0-alpha.2. It needs Blender 5.2.0 or newer.
 
 ![The Meat Factory level imported into Blender](docs/rif_geometry.jpg)
 
@@ -190,25 +190,24 @@ saved.
 ### Rules for every edit
 
 - The level was imported with **Strict Level Import** on.
-- Only ordinary level modules can be edited: objects whose Object tab shows
-  **AvP Module**. Doors, lifts, switches, fans, lights, scenery and other
-  placed objects can't be exported.
+- Geometry edits require ordinary level modules: objects whose Object tab
+  shows **AvP Module**. Light translation and AvP light settings also export.
+  Other doors, lifts, switches, fans and scenery edits cannot be exported.
 - The module's shape must belong to that one object. A shape that other
   objects also use is refused.
 - Shapes that come from another `.rif` (`SHPEXTFL`), morphing shapes
   (`SHPMORPH`) and animated shapes (`ANIMSEQU`) are refused.
 - A vertex move, UV moves and texture picks can go out in one export. New
   faces, and a moved centre, are each exported on their own.
-- Make your changes in Edit Mode. Don't move, rotate or scale the imported
-  objects. (The one exception is moving an object's origin to move its
-  centre. See section 5.)
+- Make geometry changes in Edit Mode. Don't rotate or scale imported
+  objects. Object Mode translation is supported for lights and for moving
+  a module's origin to move its centre (section 5).
 - Don't add, remove or rename modifiers, and don't add shape keys.
 - Don't delete or duplicate imported meshes, and don't add new objects to the
   level's collection.
 - Don't change material slots by hand. Use the texture picker.
-- Set every panel setting back to its original value. Changed panel settings
-  block export.
-- Don't move the **Editable Game Objects** markers.
+- Non-light panel settings still block export. Light settings are exported.
+- Don't move non-light **Editable Game Objects** markers.
 - After a door preview, click **Base shape** before you export.
 - Each export compares the scene with the last saved state of the level: the
   import, or your last successful export. After a successful export you can go
@@ -311,6 +310,25 @@ This is the old level editor's Shape > Recentre Shape.
 - The buttons don't work on an object that has a parent or constraints, or
   whose mesh is shared with another object, or while it is in Edit Mode.
 
+### 6. Move and edit lights
+
+Move an imported editor light, its marker, a placed-light mesh or its child
+light in Object Mode. Its translation is saved in integer game units with
+the level's environment scale applied. Rotation, scale, parenting and
+constraints are not light edits.
+
+Use **AvP Editor / Prelight** or **AvP Placed Light Object** for brightness,
+range, colour, flags, placed-light type and timing, and lighting-set
+ambience. These source settings, not Blender's approximate wattage, are
+exported. Values outside the game's limits are refused with a reason.
+Light edits can accompany vertex, UV and texture edits in one export.
+Untouched light bytes are retained.
+
+The Runtime and No prelight flags determine live versus baked lighting.
+Export warns when a change requires rebaking; this alpha does not rebake
+the stored vertex lighting. Warnings and errors are written to the session
+log as well as Blender's reports.
+
 ### The exported file
 
 - The file browser suggests `<level>-edit.rif` in the original's folder. You
@@ -334,19 +352,16 @@ This is the old level editor's Shape > Recentre Shape.
 
 These are shown but never written to a `.rif` file:
 
-- Panel settings. You can change the settings in the AvP panels, for
-  example **Door starts locked** or **Light brightness**. The new value is
-  kept in the `.blend` file only. While any setting differs from the original,
-  export is refused with **This export supports vertex edits only; undo the
-  AvP parameter edits first**. Setting the value back clears it. Every panel
-  says **Panel edits are staged, not exported**.
+- Non-light panel settings, such as **Door starts locked**, stay in the
+  `.blend` file only and still block export. Setting the value back clears
+  it. Light panels explicitly say that their light edits export.
 - Information sections in the panels, for example
   **AI navigation (read only)**, **Stored module acoustics (read only)**,
   **Stored track sounds (read only)**,
   **Alternate locations (source; read only)** and
   **Generator / NPC source (read only)**.
-- Lights. They are ordinary Blender lights. You can change them in Blender,
-  but no change is exported.
+- Blender-only light settings, including approximate power and light type.
+  Translation and the AvP light panel's source settings export instead.
 - Markers. **Editable Game Objects** markers are never written, and moving
   one blocks export.
 - Door previews. **Base shape**, **Stored target** and **Play interpolation**
@@ -365,8 +380,9 @@ These are shown but never written to a `.rif` file:
 - This version does not yet confirm that the game loads edited levels. Work
   on copies of your game files.
 - An edited level is saved uncompressed.
-- Only ordinary modules can be edited for export, within the rules above.
-- Panel settings, lights and markers are not exported.
+- Only ordinary modules and imported lights can be edited for export,
+  within the rules above.
+- Non-light panel settings and non-light markers are not exported.
 - A legacy import (**Strict Level Import** off) can't be exported and gets no
   AvP panels.
 - **Bitmap Mode** has no effect in this version.

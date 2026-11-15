@@ -414,12 +414,13 @@ def export_bytes(scene, text):
 
 
 @reader_boundary("REBINFF2 export")
-def _export(scene, text):
+def _export(scene, text, light_plan=None):
     """Returns the bytes and the module objects whose edits they hold (the ones that need their snapshot refreshed afterwards)."""
     original, tree, record = source_from_text(text)
     source_scan = read_level(original)
-    if read_edits(text):
-        raise ValueError("This export supports vertex edits only; undo the AvP parameter edits first")
+    from .light_export import plan_lights
+    if light_plan is None:
+        light_plan = plan_lights(scene, text, original, tree, record)
     placements = record.get("placements")
     if not isinstance(placements, dict):
         raise ValueError("Re-import this level with the vertex-export version first")
@@ -440,6 +441,8 @@ def _export(scene, text):
         if obj.get("avp_blender_plugin_source_text") != text.name:
             continue
         if obj.type != 'MESH':
+            if obj in light_plan.objects:
+                continue
             if obj.get("avp_blender_plugin_data_chunk_offset") is not None:
                 node = nodes.get(obj["avp_blender_plugin_data_chunk_offset"])
                 if node is None:
@@ -470,14 +473,14 @@ def _export(scene, text):
     if {str(offset) for offset in objects} != set(placements):
         raise ValueError("Imported geometry was added or removed; vertex-only export cannot save that")
 
-    result = bytearray(original)
+    result = bytearray(light_plan.raw)
     changes = []
     recentred = []
     uv_writes = 0
     texture_writes = 0
     edited_geometry = None
     additions = {}
-    edited_objects = []
+    edited_objects = list(light_plan.moved_meshes)
     for offset, obj in objects.items():
         saved = placements[str(offset)]
         if not isinstance(saved, dict) or not {"signature", "matrix", "modifiers", "coordinates"} <= saved.keys():
@@ -512,7 +515,7 @@ def _export(scene, text):
         if [[modifier.name, modifier.type] for modifier in obj.modifiers] != saved["modifiers"]:
             raise ValueError(f"{obj.name}: object transform or modifiers changed; use Edit Mode to move a vertex")
         origin_move = None
-        if [value for row in obj.matrix_world for value in row] != saved["matrix"]:
+        if obj not in light_plan.moved_meshes and [value for row in obj.matrix_world for value in row] != saved["matrix"]:
             # A moved object is refused. The one move the export keeps is the centre: the origin moved and the mesh moved
             # the opposite way, so nothing changed in the world.
             if not (growing or uv_changed or texture_changed):
@@ -602,7 +605,7 @@ def _export(scene, text):
     if (additions or recentred) and (changes or uv_writes or texture_writes or (additions and recentred)):
         raise ValueError("Export new geometry and a moved centre separately from vertex, UV and texture edits; undo one edit family first")
     from .raw_rif import replace_payloads
-    decoded = replace_payloads(original, tree, additions) if additions else bytes(result)
+    decoded = replace_payloads(bytes(result), tree, additions) if additions else bytes(result)
     scan = read_level(decoded)
     if recentred:
         header, position, label, shift = recentred[0]
@@ -615,7 +618,7 @@ def _export(scene, text):
         _check_scaled_bounds(decoded, header, placement.pos, scan.environment_scale)
         log.info("Vertex export changed %s vertex %s at byte %s: %s -> %s; derived normals/bounds updated; no size/offset fields changed", *changes[0])
         return decoded, edited_objects
-    if uv_writes or texture_writes or additions:
+    if uv_writes or texture_writes or additions or light_plan.changed:
         return decoded, edited_objects
     encoded_file = record.get("compressed_file")
     if encoded_file is not None:
@@ -691,7 +694,7 @@ def _write_level(target, data):
 class EXPORT_OT_avp_blender_plugin(bpy.types.Operator):
     bl_idname = "export_scene.avp_blender_plugin"
     bl_label = "Export AVP_BlenderPlugin RIF"
-    bl_description = "Save new module geometry, UVs, existing-texture assignments or one moved vertex"
+    bl_description = "Save validated lights with module geometry, UVs, existing-texture assignments or one moved vertex"
     filepath: bpy.props.StringProperty(subtype='FILE_PATH')
     filter_glob: bpy.props.StringProperty(default="*.rif", options={'HIDDEN'})
     check_existing: bpy.props.BoolProperty(default=True, options={'HIDDEN'})
@@ -744,14 +747,18 @@ class EXPORT_OT_avp_blender_plugin(bpy.types.Operator):
             # UV RNA arrays are unavailable while Blender owns an edit mesh.
             if restore_edit_mode:
                 bpy.ops.object.mode_set(mode='OBJECT')
-            data, edited = _export(context.scene, text)
+            from .light_export import plan_lights, finish_light_export
+            light_plan = plan_lights(context.scene, text)
+            data, edited = _export(context.scene, text, light_plan)
             backup, created = _write_level(target, data)
             # The file is saved: what was saved is now the starting point, so the next edit needs no re-import.
             refresh_warning = ""
-            if edited:
+            if edited or light_plan.changed:
                 from .export_refresh import refresh_after_export
                 try:
-                    refresh_after_export(text, data, edited)
+                    refresh_after_export(text, data, edited, light_plan=light_plan)
+                    if light_plan.changed:
+                        finish_light_export(text)
                 except (ValueError, RuntimeError, OSError, KeyError, IndexError, struct.error) as error:
                     log.error("Snapshot refresh after export failed: %s", error)
                     refresh_warning = f"; to keep editing, re-import the saved file ({error})"
@@ -766,8 +773,11 @@ class EXPORT_OT_avp_blender_plugin(bpy.types.Operator):
         if backup is not None:
             action = "backup made" if created else "first backup kept"
             backup_report = f"; {action}: {os.path.basename(backup)}"
+        for warning in light_plan.warnings:
+            _report(self, {'WARNING'}, warning)
         _report(self, {'WARNING' if refresh_warning else 'INFO'},
-                f"Saved {os.path.basename(target)}{backup_report}; module vertex, UV or texture export{refresh_warning}")
+                f"Saved {os.path.basename(target)}{backup_report}; module vertex, UV or texture export"
+                f"{'; light edits saved' if light_plan.changed else ''}{refresh_warning}")
         return {'FINISHED'}
 
 

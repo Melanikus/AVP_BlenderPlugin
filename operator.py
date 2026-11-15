@@ -531,8 +531,8 @@ class IMPORT_OT_avp_blender_plugin(bpy.types.Operator):
             if self.import_lights:
                 counters.lights = import_source_lights(text, cols["lights"], cols["geometry"],
                                                       context.scene, self.animate_placed_lights)
-                log.info("Imported %d native AvP light(s); Blender power is approximate; no light RIF export",
-                         counters.lights)
+                _report(self, {'INFO'}, f"Imported {counters.lights} native AvP light(s); Blender power is approximate; "
+                        "AvP light moves/fields export, without rebaking")
             print_summary(self, scan, state, counters, ctx)
             visible_views = 0
             if context.window is not None:

@@ -1,6 +1,6 @@
 # Install and use AVP_BlenderPlugin
 
-This guide covers AVP_BlenderPlugin 1.0.0-alpha.1 on Blender 5.2. Each step says what
+This guide covers AVP_BlenderPlugin 1.0.0-alpha.2 on Blender 5.2. Each step says what
 you should see. Words in **bold** are the words on the screen. A name in
 `<angle brackets>` stands for your own value, for example `<file>` for the
 name of the level file without `.rif`.
@@ -194,8 +194,8 @@ needs the option it depends on turned on.
 |---|---|---|
 | **Preset** | **Default** | Sets many options at once (see [Presets](#presets)). You can still change them afterwards. |
 | **Strict Level Import** | On | Checks the level's geometry and textures, then imports the geometry, the textures and, if you want, the lights. Only this import can be inspected in the AvP panels and exported. Turn it off for the legacy import, which shows the **Data**, **Animation** and **Debug** boxes and is for viewing only. |
-| **Editable Game Objects** | Off | Adds markers for generators, prelights, sounds, power cables, particle generators, player starts and placed hierarchies, and boxes or markers for switches, trigger areas, damage volumes, countdowns, messages and objectives. Select one to see its panel. Works only with **Strict Level Import** on. The markers do nothing in the game and are never exported. |
-| **Import AvP Lights** | On | Creates Blender point lights from the level's first `NORMALLT` light set and from its placed lights. Their power is approximate, and light changes are not exported. This line moves into the **Data** box when **Strict Level Import** is off. |
+| **Editable Game Objects** | Off | Adds markers for generators, prelights, sounds, power cables, particle generators, player starts and placed hierarchies, and boxes or markers for switches, trigger areas, damage volumes, countdowns, messages and objectives. Select one to see its panel. Works only with **Strict Level Import** on. Light marker translation exports; other marker edits do not. |
+| **Import AvP Lights** | On | Creates Blender point lights from the level's first `NORMALLT` light set and from its placed lights. Their power is approximate. In a strict import, light translation and AvP light settings export; Blender-only power does not. This line moves into the **Data** box when **Strict Level Import** is off. |
 | **Animate Placed Lights** | On | Plays each placed light's stored strobe or flicker timing on the timeline. The flicker repeats the same way every time; it is not the game's own random sequence. Shown only with **Strict Level Import** on, and greyed out unless **Import AvP Lights** is on. |
 
 ### Presets
@@ -360,7 +360,8 @@ From the top:
    why.
 2. Information sections, which are read-only.
 3. **Other source data is retained read-only**
-4. **Panel edits are staged, not exported**
+4. **Light edits export with geometry/UV/textures; no rebake** for light
+   panels; **Panel edits are staged, not exported** for other panels.
 5. The button **Export level (geometry / textures)**.
 
 If a panel shows **Cannot read RIF object chunk: `<reason>`**, the stored data
@@ -368,10 +369,21 @@ for this object can't be read. Re-import the level.
 
 ### Changed settings stay in Blender
 
-- A changed setting is stored in the `.blend` file only. It is never written
-  to a `.rif` file.
-- While any setting differs from its original value, export is refused. Set
-  the value back to the original to clear it.
+- Light settings in **AvP Editor / Prelight** and **AvP Placed Light Object**
+  are saved by export, including colour, range, flags, type, timing and
+  lighting-set ambience. Non-light settings remain staged in the `.blend`
+  file only and still block export until reset.
+- Move a light, its marker, a placed-light mesh or its child emitter in
+  Object Mode to export its translation. Game units are whole integers,
+  with the level's environment scale applied. Rotation, scale, changed
+  parenting and constraints are refused.
+- Blender's approximate light power is not the stored brightness; change
+  brightness in the AvP panel.
+- Export warns if the light's flags require a lighting rebake to show the
+  change in game. This alpha does not rebake stored vertex lighting.
+- Light edits go out with geometry, UV and texture edits; untouched lights
+  remain byte-identical. Every feature report and error reaches the session
+  log as well as Blender's reports.
 - Blender's Undo works on these changes.
 - A wrong value is refused with a message such as
   **`<name>`: range is `<min>` to `<max>`** or
@@ -387,7 +399,8 @@ for this object can't be read. Re-import the level.
   scale.
 - Game X is Blender X. Game Z is Blender Y. Game Y is upside down in Blender:
   increasing game Y lowers Blender Z.
-- Changing a position setting moves nothing in the scene.
+- Changing a light position setting moves its linked representations and
+  exports the new position. Other position settings remain staged.
 
 ### Panels and their settings
 
@@ -396,13 +409,13 @@ Every panel of a placed object (a mesh in the level) starts with
 **Game position Z (game units)**. Marker panels don't have them. The table
 lists the other settings.
 
-| Panel | Shown for | Settings you can change (kept in Blender only) |
+| Panel | Shown for | Settings you can change (light settings export; others staged) |
 |---|---|---|
 | **AvP Module** | an ordinary level module, the only kind you can edit for export | **Air duct**, **Stairs**, **Sky**, **Fog** |
 | **AvP Door** | a door | **Air duct**, **Stairs**, **Sky**, **Fog**, **Door starts locked**, **Door opens on proximity**, **Door starts open**, **Lift door**, **Horizontal door**, **Door opening time (seconds)**, **Door closing time (seconds)** |
 | **AvP Lift** | a platform lift | **Lift starts disabled**, **Lift works once**, **Lift track start Y (game units)**, **Lift track end Y (game units)** |
-| **AvP Runtime Light** | an object with a placed light (a lamp) | **Runtime light brightness**, **Runtime light range (game units)**, **Light starts on**, **Swap colour and brightness changes**, **Suppress extra light glow**, **High colour red/green/blue (0-255)**, **Low colour red/green/blue (0-255)**, **Light fade-in time (milliseconds)**, **Light fade-out time (milliseconds)**, **Light high-state time (milliseconds)**, **Light low-state time (milliseconds)**, **Light initial timer (milliseconds)**, **Integrity multiplier (0..255)** |
-| **AvP Editor / Prelight** | a prelight marker | **Light brightness**, **Light range (game units)**, **Light position X/Y/Z (game units)**, **Light red/green/blue (0-255)** |
+| **AvP Placed Light Object** | a placed-light mesh or its child emitter | **Runtime light brightness**, **Runtime light range (game units)**, **Light starts on**, **Swap colour and brightness changes**, **Suppress extra light glow**, **High colour red/green/blue (0-255)**, **Low colour red/green/blue (0-255)**, fade/hold/initial times, stored spread, runtime light and transition types, engine/local/placed-light flag words |
+| **AvP Editor / Prelight** | an imported editor light or its marker | **Light brightness**, **Light range (game units)**, **Light position X/Y/Z (game units)**, **Light red/green/blue (0-255)**, stored spread, engine/local flag words, On/Runtime/No prelight flags, lighting-set ambience |
 | **AvP Generator** | a generator marker | **Generator starts inactive** |
 | **AvP Binary Switch** | a binary switch | **Switch starts on**, **Send same message when off**, **Send no message when off** |
 | **AvP Multi-Target Switch** | a multi-target switch | **Switch starts on (0 or 1)** |
