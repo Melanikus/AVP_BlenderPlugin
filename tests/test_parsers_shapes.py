@@ -10,8 +10,8 @@ from __future__ import annotations
 import struct
 import unittest
 
-from avp_rif_importer.chunk_ids import Chunk
-from avp_rif_importer.parsers.shapes import (
+from avp_blender_plugin.chunk_ids import Chunk
+from avp_blender_plugin.parsers.shapes import (
     parse_shphead1, parse_objhead1, parse_shpextfl,
 )
 

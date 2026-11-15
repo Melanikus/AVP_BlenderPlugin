@@ -15,7 +15,7 @@ from __future__ import annotations
 import struct
 import unittest
 
-from avp_rif_importer.parsers.waypoints import (
+from avp_blender_plugin.parsers.waypoints import (
     parse_waypoint,
     first_ground_index,
     split_alien_waypoints,

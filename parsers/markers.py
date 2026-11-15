@@ -120,6 +120,7 @@ class PathPoint:
     module: int
     loc: tuple[int, int, int]
     flags: int
+    spare: int = 0
 
 
 @dataclass
@@ -129,6 +130,7 @@ class AvpPath2:
     flags: int
     points: list[PathPoint] = field(default_factory=list)
     path_length: int = 0
+    spare: int = 0
 
 
 def _normalize_quat(qx, qy, qz, qw):
@@ -217,16 +219,24 @@ def parse_soundob2(data: bytes) -> SoundOb2 | None:
     try:
         r = BinaryReader(data)
         pos_ = r.i32x3()
-        inner = r.i32()
-        outer = r.i32()
+        inner = r.u32()
+        outer = r.u32()
         max_vol = r.i32()
         pitch = r.i32()
         flags = r.i32()
         probability = r.i32()
         r.seek(SOUNDOB_OFF_NAMES)
-        snd_name = r.strz()
-        r.align4()
-        wav_name = r.strz() if r.remaining() > 0 else ""
+        end = data.find(b"\0", r.pos)
+        if end < 0:
+            log.warning("parse_soundob2: unterminated sound name")
+            return None
+        snd_name = data[r.pos:end].decode("latin-1")
+        start = end + 1
+        end = data.find(b"\0", start) if start < len(data) else start
+        if end < 0:
+            log.warning("parse_soundob2: unterminated wave name")
+            return None
+        wav_name = data[start:end].decode("latin-1")
         return SoundOb2(position=pos_, inner=inner, outer=outer,
                         max_volume=max_vol, pitch=pitch, flags=flags,
                         probability=probability, snd_name=snd_name,
@@ -283,7 +293,7 @@ def parse_avppath2(data: bytes) -> AvpPath2 | None:
         r.align4()
         path_id = r.i32()
         flags = r.i32()
-        r.i32()                       # spare2 - unused
+        spare = r.i32()
         path_length = r.i32()
         if path_length < 0 or path_length > MAX_PATH_POINTS:
             log.warning(f"parse_avppath2: implausible point count {path_length}")
@@ -298,10 +308,10 @@ def parse_avppath2(data: bytes) -> AvpPath2 | None:
             module_idx = r.i32()
             loc = r.i32x3()
             pflags = r.i32()
-            r.skip(4)                 # trailing padding
-            points.append(PathPoint(module=module_idx, loc=loc, flags=pflags))
+            point_spare = r.i32()
+            points.append(PathPoint(module=module_idx, loc=loc, flags=pflags, spare=point_spare))
         return AvpPath2(name=name, id=path_id, flags=flags,
-                        points=points, path_length=path_length)
+                        points=points, path_length=path_length, spare=spare)
     except (struct.error, IndexError) as e:
         log.warning(f"parse_avppath2: {type(e).__name__}: {e}")
         return None

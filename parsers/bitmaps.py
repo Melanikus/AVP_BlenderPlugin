@@ -65,16 +65,24 @@ def parse_bitmap_list(data: bytes) -> dict[int, BitmapEntry]:
     if data is None or len(data) < BMP_HEADER_SIZE:
         return result
     try:
-        count = struct.unpack_from("<I", data, 0)[0]
+        header = struct.unpack_from("<I", data, 0)[0]
+        count = header & 0xFFFF
+        legacy_version = header >> 16
+        if count > (len(data) - 4) // 24:
+            raise ValueError("BMPNAMES count exceeds payload")
         pos = BMP_HEADER_SIZE
         for _ in range(count):
             if pos + BMP_RECORD_SIZE > len(data):
-                break
+                raise ValueError("Truncated BMPNAMES record")
             flags = struct.unpack_from("<I", data, pos)[0]
-            index = struct.unpack_from("<I", data, pos + 4)[0]
+            index = struct.unpack_from("<i", data, pos + 4)[0]
+            if not 0 <= index <= 32767:
+                raise ValueError("BMPNAMES index exceeds bounds")
             d1 = struct.unpack_from("<I", data, pos + 8)[0]
-            version_num = d1 & 0x000fffff
+            version_num = legacy_version or (d1 & 0x000fffff)
             enum_id = (d1 >> 20) & 0xfff
+            if data.find(b"\0", pos + BMP_RECORD_SIZE) < 0:
+                raise ValueError("BMPNAMES name has no terminator")
             raw_name, pos = read_cstr(data, pos + BMP_RECORD_SIZE)
             base = os.path.splitext(
                 os.path.basename(raw_name.replace('\\', '/')))[0]
@@ -84,6 +92,8 @@ def parse_bitmap_list(data: bytes) -> dict[int, BitmapEntry]:
             # Each BMPLSTST record is 4-byte aligned.
             while pos % 4 != 0:
                 pos += 1
+            if pos > len(data):
+                raise ValueError("BMPNAMES name padding exceeds payload")
     except (struct.error, IndexError) as e:
         log.warning(f"parse_bitmap_list: {type(e).__name__}: {e}")
     return result

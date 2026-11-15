@@ -27,7 +27,7 @@ the world position stays correct.
 Neither run_stage_geometry nor run_stage_char_hierarchy reads any
 operator property - they operate purely on the scan, the ImportContext
 and the collection they write into, so the stages are independent of
-IMPORT_OT_avp_rif.
+IMPORT_OT_avp_blender_plugin.
 """
 
 from __future__ import annotations
@@ -85,7 +85,7 @@ def run_stage_geometry(scan, ctx, stats, geometry_collection):
                 stats.skipped_no_shape += 1
                 log.debug(f"  [{i:03d}] no shape for "
                           f"shape_id={oh.shape_id} (tag='{oh.tag}')")
-                continue
+                raise ValueError(f"Object {oh.tag}: missing shape {oh.shape_id}")
 
             g = shapes[shp_idx]
             try:
@@ -98,20 +98,22 @@ def run_stage_geometry(scan, ctx, stats, geometry_collection):
                     # just linked into, not from bpy.data.objects by
                     # name. On a second import the object name gets a
                     # ".001" suffix and bpy.data.objects.get(name) would
-                    # return the FIRST import's object - the avp_tag
+                    # return the FIRST import's object - the avp_blender_plugin_tag
                     # would land on the wrong mesh and Stage 1c (which
-                    # matches by avp_tag) would silently find only the
+                    # matches by avp_blender_plugin_tag) would silently find only the
                     # first-import copies.
                     obj = geometry_collection.objects.get(name)
-                    if obj is not None and oh.tag:
-                        obj["avp_tag"] = oh.tag
+                    if obj is not None:
+                        obj["avp_blender_plugin_placement_index"] = i
+                        if oh.tag:
+                            obj["avp_blender_plugin_tag"] = oh.tag
                 else:
                     stats.skipped_nogeom += 1
                     log.warning(f"  [{i:03d}] no geometry "
                                 f"(shape_id={oh.shape_id}, "
                                 f"tag='{oh.tag}')")
             except (ValueError, RuntimeError, KeyError) as e:
-                log.error(f"  [{i:03d}] ERR: {type(e).__name__}: {e}")
+                raise ValueError(f"Object {oh.tag}: {e}") from e
     finally:
         if use_progress:
             wm.progress_end()
@@ -153,7 +155,7 @@ def run_stage_morph(scan, ctx, counters, morph_collection):
 
     Each target reuses its parent shape's placement - a morph target is
     expressed in the same local space as the shape that owns it - and is
-    marked with `avp_type = "morph"` plus its parent tag and index. The
+    marked with `avp_blender_plugin_type = "morph"` plus its parent tag and index. The
     meshes go into the dedicated `<level>_Morphs` collection so they stay
     separate from the level geometry. Targets whose parent has no
     placement in the level are skipped.
@@ -205,7 +207,7 @@ def run_stage_morph(scan, ctx, counters, morph_collection):
                 continue
             obj = morph_collection.objects.get(name)
             if obj is not None:
-                obj["avp_tag"] = tag
+                obj["avp_blender_plugin_tag"] = tag
                 try:
                     obj[AVP_PROP_TYPE] = AVP_TYPE_MORPH
                     obj[AVP_PROP_MORPH_PARENT] = grp.parent_tag
@@ -263,7 +265,7 @@ def run_stage_char_hierarchy(scan, base, cols, counters, scale):
     geometry_col = cols["geometry"]
     by_tag: dict[str, object] = {}
     for obj in geometry_col.objects:
-        tag = obj.get("avp_tag")
+        tag = obj.get("avp_blender_plugin_tag")
         if tag:
             by_tag[str(tag).lower()] = obj
 

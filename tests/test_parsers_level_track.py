@@ -19,7 +19,7 @@ from __future__ import annotations
 import struct
 import unittest
 
-from avp_rif_importer.parsers.level_track import (
+from avp_blender_plugin.parsers.level_track import (
     parse_objtrak2,
     MAX_SECTIONS,
     MIN_PAYLOAD,

@@ -36,7 +36,7 @@ from .textures import resolve_texture, material_name
 
 # Precompiled struct parsers - 20-30% faster than unpack_from per call.
 _STRUCT_VERT = struct.Struct("<iii")
-_STRUCT_POLY = struct.Struct("<iiIIiiii")
+_STRUCT_POLY = struct.Struct("<iiIIiiiii")
 _STRUCT_UV_F = struct.Struct("<ff")
 _STRUCT_UV_I = struct.Struct("<hh")
 _STRUCT_I    = struct.Struct("<i")
@@ -63,13 +63,17 @@ def extract_polygons(data: bytes):
     unpack = _STRUCT_POLY.unpack_from
     for i in range(n):
         base = i * POLY_SIZE
-        engine_type, normal_index, poly_flags, poly_colour, v0, v1, v2, v3 = \
+        engine_type, normal_index, poly_flags, poly_colour, v0, v1, v2, v3, v4 = \
             unpack(data, base)
         verts = []
-        for v in (v0, v1, v2, v3):
-            if v < 0:
+        for v in (v0, v1, v2, v3, v4):
+            if v == -1:
                 break
+            if v < 0:
+                raise ValueError(f"Polygon {i}: invalid corner {v}")
             verts.append(v)
+        if not 3 <= len(verts) <= 4 or (v0, v1, v2, v3, v4)[len(verts)] != -1:
+            raise ValueError(f"Polygon {i}: needs 3-4 corners and -1 terminator")
         out.append({
             "num_verts": len(verts), "verts": verts,
             "engine_type": engine_type, "normal_index": normal_index,
@@ -87,18 +91,25 @@ def extract_uvs(data: bytes, int16_mode: bool = False):
     once the texture they belong to is known.
     """
     out = []
+    if len(data) < 4:
+        raise ValueError("SHPUVCRD missing list count")
+    count = _STRUCT_I.unpack_from(data)[0]
+    if count < 0 or count > (len(data) - 4) // 4:
+        raise ValueError("SHPUVCRD list count exceeds payload")
     pos = 4
     unpack_i = _STRUCT_I.unpack_from
     unpack_uv = (_STRUCT_UV_I if int16_mode else _STRUCT_UV_F).unpack_from
-    while pos + 4 <= len(data):
+    for _ in range(count):
+        if pos + 4 > len(data):
+            raise ValueError("Truncated SHPUVCRD list")
         nv = unpack_i(data, pos)[0]
         pos += 4
-        if nv < 1 or nv > 4:
-            break
+        if nv < 0 or nv > 4:
+            raise ValueError("SHPUVCRD corner count exceeds bounds")
         uvs = []
         for _ in range(nv):
             if pos + 8 > len(data):
-                return out
+                raise ValueError("Truncated SHPUVCRD coordinates")
             a, b = unpack_uv(data, pos)
             uvs.append((a, b))
             pos += 8
@@ -150,17 +161,13 @@ def png_dimensions(path: str) -> tuple[int, int] | None:
 
 def bitmap_index_from_poly(poly_colour: int) -> int:
     """Extract the bitmap table index from the packed poly_colour field."""
-    return poly_colour & POLY_BITMAP_MASK
+    return poly_colour & 0x7FFF
 
 
 def uv_index_from_poly(poly_colour: int) -> int:
     """Extract the UV record index from the packed poly_colour field."""
-    # Do not "simplify": poly_colour MUST be unsigned and the flagged
-    # path shifts the hi nibble up by 4 bits, giving large indices by
-    # design.
-    if poly_colour & POLY_UV_HI_MASK:
-        return ((poly_colour & POLY_UV_HI_MASK) << 4) | (poly_colour >> 16)
-    return poly_colour >> 16
+    signed = poly_colour if poly_colour < 0x80000000 else poly_colour - 0x100000000
+    return signed >> 16
 
 
 def quat_to_mat(qx, qy, qz, qw):
@@ -208,7 +215,7 @@ def build_mesh(shape: ShapeGroup, base, name, scale, bitmaps, tex_index,
     new_verts = [transform(v) for v in verts] if transform else \
                 [(float(v[0]), float(v[1]), float(v[2])) for v in verts]
 
-    faces, fmat, fuv = [], [], []
+    faces, fmat, fuv, uv_mapping = [], [], [], []
     mat_lookup, mat_names, mat_objs = {}, [], []
 
     for poly in polys:
@@ -224,8 +231,19 @@ def build_mesh(shape: ShapeGroup, base, name, scale, bitmaps, tex_index,
 
         slot = 0
         png = None
+        image = None
+        textured = poly["engine_type"] in (5, 6, 7, 21, 22, 23, 24, 25)
+        if textured:
+            if poly_colour & 0x8000 or not 0 <= uv_idx < len(uvs):
+                raise ValueError(f"Polygon {poly['poly_idx']}: invalid UV reference")
+            if not uvs[uv_idx]:
+                continue
+            if len(uvs[uv_idx]) < len(v):
+                raise ValueError(f"Polygon {poly['poly_idx']}: too few UV corners")
         if import_materials:
-            entry = bitmaps.get(bmp_idx) if bitmaps else None
+            entry = bitmaps.get(bmp_idx) if bitmaps and textured else None
+            if textured and entry is None:
+                raise ValueError(f"Polygon {poly['poly_idx']}: bitmap {bmp_idx} not found")
             tex_base = entry.name if entry is not None else None
             tex_raw = entry.raw_name if entry is not None else ""
             if tex_base:
@@ -252,6 +270,7 @@ def build_mesh(shape: ShapeGroup, base, name, scale, bitmaps, tex_index,
                                    tex_stats)
                    if tex_base else None)
             png = res.png if res else None
+            image = res.image if res else None
 
             # Material identity comes from the texture's path, so two
             # textures sharing a file name never share a material.
@@ -271,7 +290,8 @@ def build_mesh(shape: ShapeGroup, base, name, scale, bitmaps, tex_index,
                     m = get_material(mat_name, png, mat_cache,
                                      raw_name=tex_raw, level_hint=level_hint,
                                      cull_backfaces=cull_backfaces,
-                                     tex_path=res.source_path if res else "")
+                                     tex_path=res.source_path if res else "",
+                                     image=image)
                 if mat_timing is not None:
                     mat_timing[0] += time.perf_counter() - _t_mat
                 mat_lookup[mat_name] = len(mat_names)
@@ -279,20 +299,25 @@ def build_mesh(shape: ShapeGroup, base, name, scale, bitmaps, tex_index,
                 mat_objs.append(m)
             slot = mat_lookup[mat_name]
 
-        puv_raw = uvs[uv_idx] if 0 <= uv_idx < len(uvs) else []
+        puv_raw = uvs[uv_idx] if textured and 0 <= uv_idx < len(uvs) else []
         # Scale belongs to the texture this polygon uses: the engine
         # divides the texel index by the loaded image size, so a 256px
         # bitmap is not stretched like a 128px one.
-        dims = png_dimensions(png) if png else None
+        dims = tuple(image.size) if image is not None else (png_dimensions(png) if png else None)
         tex_w = float(dims[0]) if dims else DEFAULT_TEX_SIZE
         tex_h = float(dims[1]) if dims else DEFAULT_TEX_SIZE
-        puv = [uv_to_blender(u, v, tex_w, tex_h) for (u, v) in puv_raw]
+        puv = [uv_to_blender(int(u), int(v), tex_w, tex_h) for (u, v) in puv_raw]
+        def map_corners(corners):
+            for corner in corners:
+                uv_mapping.extend((poly["poly_idx"], uv_idx if puv else -1,
+                                   corner, int(tex_w), int(tex_h)))
 
         # Triangles stay as one face; quads become two triangles.
         if poly["num_verts"] == 3:
             faces.append((v[0], v[1], v[2]))
             fmat.append(slot)
             fuv.append(puv[:3] if len(puv) >= 3 else [])
+            map_corners((0, 1, 2))
         elif poly["num_verts"] == 4:
             faces.append((v[0], v[1], v[2]))
             fmat.append(slot)
@@ -302,6 +327,7 @@ def build_mesh(shape: ShapeGroup, base, name, scale, bitmaps, tex_index,
             fmat.append(slot)
             fuv.append([puv[0], puv[2], puv[3]] if len(puv) >= 4 else
                        (puv[:3] if len(puv) >= 3 else []))
+            map_corners((0, 1, 2, 0, 2, 3))
 
     if not faces:
         return None
@@ -334,6 +360,7 @@ def build_mesh(shape: ShapeGroup, base, name, scale, bitmaps, tex_index,
             else:
                 ext((0.0, 0.0, 0.0, 0.0, 0.0, 0.0))
         uv_layer.data.foreach_set("uv", flat_uvs)
+        mesh["avp_blender_plugin_uv_mapping"] = uv_mapping
 
     # Optional pivot centering: move the geometry's center to the object origin.
     obj_loc = (0.0, 0.0, 0.0)

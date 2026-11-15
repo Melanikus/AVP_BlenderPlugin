@@ -15,7 +15,7 @@ import logging
 import sys
 
 
-log = logging.getLogger("avp_rif")
+log = logging.getLogger("avp_blender_plugin_rif")
 
 
 def configure_logging(level: int = logging.INFO) -> None:

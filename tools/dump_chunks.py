@@ -103,8 +103,8 @@ def dump_one(path, max_depth=MAX_DEPTH, resync_max=RESYNC_MAX,
              hex_ids=HEX_DUMP_IDS, per_id_limit=HEX_DUMP_LIMIT_PER_ID,
              hex_bytes=HEX_BYTES):
     """Decode one RIF and print the full chunk ID table (+ hex dumps)."""
-    from avp_rif_importer.chunks import parse_chunks
-    from avp_rif_importer.rif_loader import load_rif_auto
+    from avp_blender_plugin.chunks import parse_chunks
+    from avp_blender_plugin.rif_loader import load_rif_auto
 
     print()
     print("=" * 70)

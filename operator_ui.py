@@ -5,10 +5,8 @@ touching the pipeline. The function receives the operator instance and
 its layout; it only touches EnumProperty/BoolProperty/FloatProperty
 names that already live on the operator class.
 
-Section "Materials" contains extract_ffl, which is enabled together
-with import_materials (extracted textures are useless without
-materials). The bridge enforces the same rule at runtime as a
-safety net for scripted invocations.
+Section "Materials" selects the game-data root for in-memory textures.
+Strict mode exposes native lights and hides legacy stages.
 """
 
 from __future__ import annotations
@@ -17,6 +15,13 @@ from __future__ import annotations
 def draw_operator_panels(op, layout):
     """Draw the operator UI as five named sections."""
     layout.prop(op, "preset")
+    layout.prop(op, "mvp_only")
+    layout.prop(op, "editable_game_objects")
+    if op.mvp_only:
+        layout.prop(op, "import_lights")
+        row = layout.row()
+        row.enabled = op.import_lights
+        row.prop(op, "animate_placed_lights")
     layout.separator()
 
     box = layout.box()
@@ -42,7 +47,10 @@ def draw_operator_panels(op, layout):
     row = box.row(); row.enabled = op.import_materials
     row.prop(op, "cull_backfaces")
     row = box.row(); row.enabled = op.import_materials
-    row.prop(op, "extract_ffl")
+    row.prop(op, "game_data")
+
+    if op.mvp_only:
+        return
 
     box = layout.box()
     box.label(text="Data", icon='OUTLINER_OB_EMPTY')

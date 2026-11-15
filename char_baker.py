@@ -187,7 +187,7 @@ def bake_character_nla(scan, cols, scale: float, fps: int = 30,
     geometry_col = cols["geometry"]
     obj_by_tag: dict[str, object] = {}
     for obj in geometry_col.objects:
-        tag = obj.get("avp_tag")
+        tag = obj.get("avp_blender_plugin_tag")
         if tag:
             obj_by_tag[str(tag).lower()] = obj
 

@@ -5,7 +5,7 @@
 
 Takes the raw bytes of a .RIF file and returns the uncompressed chunk
 stream that every later import stage consumes. The compressed format is
-a canonical Huffman code with a fixed 328-byte header:
+a canonical Huffman code with a fixed 316-byte header:
     magic(8) + cs(4) + us(4) + counts[11](44) + ba[256]
 `counts` is a histogram of code lengths, `ba` is the symbol alphabet in
 canonical order.
@@ -122,11 +122,16 @@ def decompress_rif(raw: bytes) -> bytes:
             f"Compressed stream truncated: cs={cs}, "
             f"have={len(raw) - HUFFMAN_HEADER_SIZE}")
 
+    if not 12 <= us <= 32 * 1024 * 1024 or us > cs * 8:
+        raise ValueError(f"Decoded RIF size exceeds bounds: {us}")
+    if any(n < 0 for n in counts) or not 1 <= sum(counts) <= 257:
+        raise ValueError("Invalid Huffman code counts")
+    space = sum(n << (MAX_DEPTH - 1 - i) for i, n in enumerate(counts))
+    if space != 1 << MAX_DEPTH:
+        raise ValueError("Incomplete or oversubscribed Huffman code space")
     payload = raw[HUFFMAN_HEADER_SIZE:HUFFMAN_HEADER_SIZE + cs]
     data, truncated = huffman_decode(payload, build_lookup(counts, ba), us)
     # Partial output is still usable - log and return what we have.
     if truncated or len(data) != us:
-        log.warning(
-            "    Huffman decode incomplete "
-            f"(got {len(data)}/{us} bytes, cs={cs}, sum(counts)={sum(counts)})")
+        raise ValueError(f"Huffman decode incomplete: {len(data)}/{us} bytes")
     return data

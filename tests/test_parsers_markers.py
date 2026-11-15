@@ -7,7 +7,7 @@ from __future__ import annotations
 import struct
 import unittest
 
-from avp_rif_importer.parsers.markers import (
+from avp_blender_plugin.parsers.markers import (
     parse_dumobjdt, parse_dumobjtx, parse_plachidt, parse_avpgener,
     parse_soundob2, parse_avpstart, parse_camorign, parse_avppath2,
 )
@@ -52,12 +52,11 @@ def _make_soundob2(pos=(0, 0, 0), inner=0, outer=0, max_vol=0, pitch=0,
     out = struct.pack("<iii", *pos)
     out += struct.pack("<iiiiii", inner, outer, max_vol, pitch, flags,
                        probability)
-    # Now at offset 36; strz starts at 40 -> 4 bytes padding.
+    # pad3 occupies offset 36; the adjacent names start at 40.
     out += b"\x00" * 4
     out += cstr(snd)
-    out = pad4(out)
     out += cstr(wav)
-    return out
+    return pad4(out)
 
 
 def _make_avpstart(loc=(0, 0, 0), mat=(0,) * 9, module_id=(0, 0)):
@@ -152,6 +151,21 @@ class TestParseAvpGener(unittest.TestCase):
 
 
 class TestParseSoundOb2(unittest.TestCase):
+    def test_adjacent_names_and_unsigned_ranges(self):
+        data = struct.pack("<3i2I5i", 1, 2, 3, 0x80000000, 0xffffffff, 127, -1536, 0, 0, 99)
+        sound = parse_soundob2(data + b"\xe9\0wave.wav\0")
+        self.assertEqual((sound.inner, sound.outer), (0x80000000, 0xffffffff))
+        self.assertEqual((sound.snd_name, sound.wav_name), ("\u00e9", "wave.wav"))
+
+    def test_optional_blank_or_absent_wave_name(self):
+        for suffix in (b"", b"\0"):
+            sound = parse_soundob2(b"\0" * 40 + b"name\0" + suffix)
+            self.assertEqual((sound.snd_name, sound.wav_name), ("name", ""))
+
+    def test_unterminated_names_refused(self):
+        for suffix in (b"name", b"name\0wave"):
+            self.assertIsNone(parse_soundob2(b"\0" * 40 + suffix))
+
     def test_basic(self):
         s = parse_soundob2(_make_soundob2(
             pos=(1, 2, 3), inner=100, outer=200, max_vol=90,

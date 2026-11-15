@@ -1,12 +1,12 @@
 """T-t2: double-import safety for Stage 1 tagging (B-dup).
 
 Regression guard for the fix in stages_geometry.run_stage_geometry:
-after process_shape creates a new mesh, avp_tag must be written to
+after process_shape creates a new mesh, avp_blender_plugin_tag must be written to
 the object that THIS import placed into the geometry collection, not
 to whatever bpy.data.objects.get(name) happens to return. On a
 second import the fresh object gets a '.001' suffix in Blender's
 global object table, so a global-name lookup reaches back to the
-first import's mesh - Stage 1c (which matches by avp_tag) then only
+first import's mesh - Stage 1c (which matches by avp_blender_plugin_tag) then only
 ever sees the stale copies.
 
 These tests exercise the fix's lookup mechanism (collection-scoped
@@ -27,7 +27,7 @@ def _apply_tag_like_stage1(geometry_collection, name, tag):
     """Mirror of the double-import-safe tagging block in stages_geometry."""
     obj = geometry_collection.objects.get(name)
     if obj is not None and tag:
-        obj["avp_tag"] = tag
+        obj["avp_blender_plugin_tag"] = tag
     return obj
 
 
@@ -112,7 +112,7 @@ class TestTagLandsOnFreshObject(_BlenderFixture):
         # --- First import: process_shape would return "crate". ---
         first = self._new_object("crate", col)
         _apply_tag_like_stage1(col, first.name, "crate_A")
-        self.assertEqual(first.get("avp_tag"), "crate_A")
+        self.assertEqual(first.get("avp_blender_plugin_tag"), "crate_A")
 
         # --- Second import: process_shape would return "crate.001". ---
         second = self._new_object("crate", col)
@@ -122,8 +122,8 @@ class TestTagLandsOnFreshObject(_BlenderFixture):
         # Both objects carry the tag and stay distinct - the fix does
         # not clobber the first import's mesh with a second-import tag.
         self.assertIsNot(first, second)
-        self.assertEqual(first.get("avp_tag"), "crate_A")
-        self.assertEqual(second.get("avp_tag"), "crate_A")
+        self.assertEqual(first.get("avp_blender_plugin_tag"), "crate_A")
+        self.assertEqual(second.get("avp_blender_plugin_tag"), "crate_A")
 
     def test_stage1c_style_iteration_finds_both(self):
         # Simulates Stage 1c's by_tag construction on a scene that has
@@ -136,7 +136,7 @@ class TestTagLandsOnFreshObject(_BlenderFixture):
 
         by_tag = {}
         for obj in col.objects:
-            tag = obj.get("avp_tag")
+            tag = obj.get("avp_blender_plugin_tag")
             if tag:
                 by_tag[str(tag).lower()] = obj
         self.assertIn("bone_1", by_tag)

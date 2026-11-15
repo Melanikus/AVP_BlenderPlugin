@@ -10,8 +10,8 @@ from __future__ import annotations
 import struct
 import unittest
 
-from avp_rif_importer.config import MAX_DEPTH, HUFFMAN_HEADER_SIZE
-from avp_rif_importer.huffman import (
+from avp_blender_plugin.config import MAX_DEPTH, HUFFMAN_HEADER_SIZE
+from avp_blender_plugin.huffman import (
     read_huffman_header, build_lookup, decompress_rif,
 )
 

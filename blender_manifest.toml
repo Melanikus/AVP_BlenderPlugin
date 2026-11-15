@@ -1,19 +1,19 @@
 schema_version = "1.0.0"
 
-id = "avp_rif_importer"
-version = "1.3.2"
-name = "Aliens vs Predator RIF Importer"
-tagline = "Import AvP (1999) RIF assets: models, levels, textures, rigs"
-maintainer = "AdiJager"
+id = "avp_blender_plugin"
+version = "1.3.74"
+name = "AVP_BlenderPlugin"
+tagline = "A fork of AdiJager's BlendRIF for AvP level editing"
+maintainer = "Melanikus"
 type = "add-on"
 
-blender_version_min = "4.2.0"
+blender_version_min = "5.2.0"
 license = ["SPDX:GPL-3.0-or-later"]
 
 # Only the fields documented for a manifest belong here: `website` is the
 # single URL field Blender accepts, and unknown keys are ignored by the
 # build/validate tooling (so a typo would silently do nothing).
-website = "https://github.com/AdiJager/BlendRIF"
+website = "https://github.com/Melanikus/AVP_BlenderPlugin"
 
 tags = ["Import-Export"]
 
@@ -35,4 +35,4 @@ paths_exclude_pattern = [
 ]
 
 [permissions]
-files = "Read .RIF assets and write extracted FFL texture PNGs"
+files = "Read RIF assets and game textures; write RIF exports to the chosen file"

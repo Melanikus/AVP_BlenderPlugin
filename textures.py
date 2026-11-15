@@ -252,10 +252,11 @@ class TextureResolution:
     png: str | None = None        # absolute PNG path, or None
     source_path: str = ""         # tree-relative path of the PNG
     via: str = ""                 # path | path-variant | level | name | miss
+    image: object | None = None
 
     def __bool__(self) -> bool:
         """True when a PNG was found."""
-        return self.png is not None
+        return self.png is not None or self.image is not None
 
 
 def resolve_texture(tex_index, name: str, raw_name: str = "",
@@ -267,6 +268,9 @@ def resolve_texture(tex_index, name: str, raw_name: str = "",
     fallback), `raw_name` its stored game path (the authoritative key).
     Ambiguous and missing results are counted in `stats` and logged.
     """
+    from .memory_textures import MemoryTextures
+    if isinstance(tex_index, MemoryTextures):
+        return tex_index.resolve(name, raw_name, stats)
     if isinstance(tex_index, tuple):        # tolerate the legacy 2-tuple
         tex_index = TextureIndex(by_path=tex_index[0], by_name=tex_index[1])
 

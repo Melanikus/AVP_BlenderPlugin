@@ -14,7 +14,7 @@ from __future__ import annotations
 import struct
 import unittest
 
-from avp_rif_importer.parsers.lights import parse_stdlight
+from avp_blender_plugin.parsers.lights import parse_stdlight
 
 
 def _make_stdlight(light_number=0, loc=(0, 0, 0), brightness=0,

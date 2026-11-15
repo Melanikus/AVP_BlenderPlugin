@@ -24,7 +24,7 @@ except ImportError:
 @unittest.skipUnless(_HAS_BPY, "geometry.py requires bpy (run inside Blender)")
 class TestPolyBitmapIndex(unittest.TestCase):
     def setUp(self):
-        from avp_rif_importer.geometry import bitmap_index_from_poly
+        from avp_blender_plugin.geometry import bitmap_index_from_poly
         self.f = bitmap_index_from_poly
 
     def test_zero(self):
@@ -42,7 +42,7 @@ class TestPolyBitmapIndex(unittest.TestCase):
 @unittest.skipUnless(_HAS_BPY, "geometry.py requires bpy (run inside Blender)")
 class TestPolyUvIndex(unittest.TestCase):
     def setUp(self):
-        from avp_rif_importer.geometry import uv_index_from_poly
+        from avp_blender_plugin.geometry import uv_index_from_poly
         self.f = uv_index_from_poly
 
     def test_zero(self):
@@ -78,7 +78,7 @@ class TestPolyUvIndex(unittest.TestCase):
 @unittest.skipUnless(_HAS_BPY, "geometry.py requires bpy (run inside Blender)")
 class TestIdentityQuat(unittest.TestCase):
     def setUp(self):
-        from avp_rif_importer.geometry import is_identity_quat
+        from avp_blender_plugin.geometry import is_identity_quat
         self.f = is_identity_quat
 
     def test_identity(self):
@@ -103,7 +103,7 @@ class TestUvToBlender(unittest.TestCase):
     """UVs are texel indices; the engine uses texel centres and v from top."""
 
     def setUp(self):
-        from avp_rif_importer.geometry import uv_to_blender
+        from avp_blender_plugin.geometry import uv_to_blender
         self.f = uv_to_blender
 
     def test_texel_centre_and_flip(self):
@@ -147,7 +147,7 @@ class TestPngDimensions(unittest.TestCase):
     """PNG size is read from the IHDR so UV scale follows the texture."""
 
     def test_missing_file_returns_none(self):
-        from avp_rif_importer.geometry import png_dimensions
+        from avp_blender_plugin.geometry import png_dimensions
         self.assertIsNone(png_dimensions(""))
         self.assertIsNone(png_dimensions("/definitely/not/here.png"))
 
@@ -155,7 +155,7 @@ class TestPngDimensions(unittest.TestCase):
         import os
         import struct
         import tempfile
-        from avp_rif_importer.geometry import png_dimensions
+        from avp_blender_plugin.geometry import png_dimensions
 
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "tex.png")
@@ -169,7 +169,7 @@ class TestPngDimensions(unittest.TestCase):
     def test_not_a_png_returns_none(self):
         import os
         import tempfile
-        from avp_rif_importer.geometry import png_dimensions
+        from avp_blender_plugin.geometry import png_dimensions
 
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "tex.png")

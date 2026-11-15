@@ -21,7 +21,7 @@ from mathutils import Quaternion
 
 from .chunk_ids import Chunk
 from .chunks import parse_chunks
-from .utils import _safe_name, apply_axis, world_pos, sanitize
+from .utils import _safe_name, apply_axis, world_pos, sanitize, log
 from .props import (
     AVP_PROP_TYPE, AVP_PROP_NAME, AVP_PROP_TEXT,
     AVP_PROP_BBOX_MIN, AVP_PROP_BBOX_MAX,

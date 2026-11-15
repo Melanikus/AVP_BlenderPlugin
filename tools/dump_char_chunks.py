@@ -20,8 +20,8 @@ SHOW_HIERD_PID     = True
 
 def main():
     try:
-        from avp_rif_importer.rif_loader import load_rif_auto
-        from avp_rif_importer.chunks import parse_chunks
+        from avp_blender_plugin.rif_loader import load_rif_auto
+        from avp_blender_plugin.chunks import parse_chunks
     except ImportError as e:
         print(f"ERROR: {e}")
         return

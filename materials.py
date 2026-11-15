@@ -42,7 +42,7 @@ from .textures import (
 
 
 # Custom property on materials: the tree-relative texture path.
-TEX_PATH_PROP = "avp_tex_path"
+TEX_PATH_PROP = "avp_blender_plugin_tex_path"
 
 
 # ---------------------------------------------------------------------------
@@ -123,7 +123,7 @@ def _mat_has_image_at(mat, png: str | None) -> bool:
 
 def get_material(name, png, cache, color=None,
                  raw_name: str = "", level_hint: str = "",
-                 cull_backfaces: bool = True, tex_path: str = ""):
+                 cull_backfaces: bool = True, tex_path: str = "", image=None):
     """Return a cached material for (name, png, tex_path); create if needed.
 
     `name` is the display name derived from the texture path (see
@@ -142,7 +142,7 @@ def get_material(name, png, cache, color=None,
     """
     # Cache key includes the resolved file so two shapes with the same
     # material name but different textures do not collide.
-    key = (name, png, color)
+    key = (name, png, color, image)
     if key in cache:
         return cache[key]
 
@@ -153,7 +153,7 @@ def get_material(name, png, cache, color=None,
         same_texture = (ex_path == identity) if identity else True
         if hasattr(ex, "use_backface_culling"):
             ex.use_backface_culling = cull_backfaces
-        if same_texture and (png is None or _mat_has_image_at(ex, png)):
+        if same_texture and image is None and (png is None or _mat_has_image_at(ex, png)):
             bsdf = _get_bsdf(ex)
             if bsdf is not None:
                 _apply_material_defaults(bsdf)
@@ -179,6 +179,13 @@ def get_material(name, png, cache, color=None,
     nodes, links, bsdf = _new_principled(m, cull_backfaces=cull_backfaces)
     if color:
         bsdf.inputs["Base Color"].default_value = color
+    elif image is not None:
+        t = nodes.new("ShaderNodeTexImage")
+        t.image = image
+        t.extension = 'REPEAT'
+        links.new(t.outputs["Color"], bsdf.inputs["Base Color"])
+        links.new(t.outputs["Alpha"], bsdf.inputs["Alpha"])
+        m.surface_render_method = 'DITHERED'
     elif png and os.path.exists(png):
         try:
             img = bpy.data.images.load(png, check_existing=True)

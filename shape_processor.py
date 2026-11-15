@@ -483,4 +483,4 @@ def process_shape(shape: ShapeGroup, obj: ObjHead | None, idx: int,
         o.rotation_quaternion = char_quat
     else:
         o.location = loc
-    return name
+    return o.name

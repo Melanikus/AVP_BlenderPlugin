@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from avp_rif_importer.utils import apply_axis, sanitize, _safe_name
+from avp_blender_plugin.utils import apply_axis, sanitize, _safe_name
 
 
 class TestApplyAxis(unittest.TestCase):

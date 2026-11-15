@@ -6,8 +6,8 @@ from __future__ import annotations
 import struct
 import unittest
 
-from avp_rif_importer.chunks import parse_chunks
-from avp_rif_importer.parsers.char_anim import parse_obanalls, FRAME_SIZE
+from avp_blender_plugin.chunks import parse_chunks
+from avp_blender_plugin.parsers.char_anim import parse_obanalls, FRAME_SIZE
 
 
 def _obanalls(num_sequences, sequences=b""):

@@ -34,7 +34,7 @@ import unittest
 import bpy
 from mathutils import Matrix
 
-from avp_rif_importer.char_baker import (
+from avp_blender_plugin.char_baker import (
     _frame_local_matrix,
     _iter_action_fcurves,
     _rest_world_matrix,

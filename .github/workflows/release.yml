@@ -1,0 +1,319 @@
+# Makes a DRAFT release of AVP_BlenderPlugin, only when someone with write access asks for it ("Run workflow", on main, with the
+# version and the SHA-256 the local gate printed for that commit). DRAFT by Apone, 2026-11-14, for Hicks's security read. Newt commits
+# it as .github/workflows/release.yml.
+#
+# It never publishes anything. It ends with a draft release that only people with write access can see; Melanikus reads it and
+# presses Publish. Until then there's no tag either: GitHub makes the tag when the draft is published.
+#
+# Four jobs, each only after the one before it passed:
+#   1. check: this is main's tip, the version matches blender_manifest.toml, RELEASE-BLOCKERS.md lists nothing, and Snyk Code passes
+#      on every Python file (checks.yml's rules, run again here, so a release never rests on an old result);
+#   2. build: the zip is built from this commit's blobs by tools/release_package.py, the same code the local gate runs, and its
+#      SHA-256 must be the one the local gate printed (the gate on Blender 5.2 ran on exactly these bytes);
+#   3. scan: VirusTotal looks at the zip. Every answer it gives is checked by tools/check_virustotal.py before anything believes it
+#      (AvP Tao #3);
+#   4. draft: everything is checked again, then the draft is made. If any scanner flagged the zip, the draft's text starts by saying
+#      so and the run ends red, so nobody publishes it before reading the report (the owner's ruling for AvPx, 2026-11-08).
+#
+# Why it's started by hand and not by a tag: a workflow comes from the commit it runs on, so a tag could point at a commit with these
+# checks taken out. Started from main, this file comes from the protected branch.
+# The secrets: SNYK_TOKEN, and VIRUSTOTAL_API_KEY in the "release" environment. Melanikus adds both himself (the release checklist);
+# without them this fails closed.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "The version in blender_manifest.toml, three numbers such as 1.4.0"
+        required: true
+        type: string
+      sha256:
+        description: "The zip's SHA-256 that the local gate (Blender 5.2) printed for this commit"
+        required: true
+        type: string
+      preview:
+        description: "Mark it as a pre-release (the first community release is a preview)"
+        required: true
+        type: boolean
+        default: true
+
+# Nothing by default: each job says what it needs, and only the last one can write anything.
+permissions: {}
+
+# One at a time, so two runs can't be making the same version at once.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  SNYK_CLI_VERSION: v1.1308.3
+  SNYK_CLI_SHA256: 5f323f45885341ea1473639859271925912ece82a2f77bc146bb4468f9838840
+
+jobs:
+  check:
+    name: Check this commit may be released
+    runs-on: ubuntu-24.04   # pinned, so a runner-image migration never changes the gate
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The inputs are typed by a person, so they come in as settings and are checked letter for letter, never pasted into a command.
+      - name: Refuse anything that may not be released
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+          WANTED: ${{ inputs.sha256 }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$VERSION" =~ ^(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})$ ]] || { echo "::error::The version is not three whole numbers"; exit 1; }
+          [[ "$WANTED" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::The SHA-256 is not 64 small letters and digits"; exit 1; }
+          [ "$GITHUB_REF" = "refs/heads/main" ] || { echo "::error::A release is made only from main"; exit 1; }
+          tip=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          [ "$tip" = "$GITHUB_SHA" ] || { echo "::error::main has moved on since this run started"; exit 1; }
+          stated=$(grep -E '^version *= *"' blender_manifest.toml | head -1 | cut -d'"' -f2)
+          [ "$stated" = "$VERSION" ] || { echo "::error::blender_manifest.toml says version $stated, not $VERSION"; exit 1; }
+          # The same rule as AvPx's RELEASE-BLOCKERS.md: under the heading, the only line may be the word Nothing. A file cut short by
+          # a mistake must not look like an empty list, so a missing heading is refused too.
+          [ -f RELEASE-BLOCKERS.md ] || { echo "::error::RELEASE-BLOCKERS.md is missing"; exit 1; }
+          body=$(awk '/^## What.s in the way$/{f=1; next} /^## /{f=0} f && NF' RELEASE-BLOCKERS.md)
+          grep -q "^## What.s in the way$" RELEASE-BLOCKERS.md || { echo "::error::RELEASE-BLOCKERS.md has no 'What's in the way' heading"; exit 1; }
+          [ "$body" = "Nothing." ] || { echo "In the way:"; echo "$body"; echo "::error::RELEASE-BLOCKERS.md lists something still in the way"; exit 1; }
+          echo "This commit may be released: version $VERSION, main's tip, nothing listed in the way."
+
+      - name: Install the pinned Snyk CLI
+        shell: bash
+        run: |
+          curl -fsSL "https://downloads.snyk.io/cli/$SNYK_CLI_VERSION/snyk-linux" -o "$RUNNER_TEMP/snyk"
+          echo "$SNYK_CLI_SHA256  $RUNNER_TEMP/snyk" | sha256sum -c -
+          chmod +x "$RUNNER_TEMP/snyk"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      # checks.yml's Snyk Code rules, run again on this exact commit: findings fail, errors retry and then fail, a missing token
+      # fails, and so does any Python file Snyk didn't read.
+      - name: Snyk Code (SAST) on every Python file
+        shell: bash
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          if [ -z "$SNYK_TOKEN" ]; then echo "::error::The SNYK_TOKEN secret is missing, so the release fails closed"; exit 1; fi
+          for attempt in 1 2 3; do
+            if snyk code test --sarif-file-output=snyk-code.sarif; then rc=0; else rc=$?; fi
+            if [ "$rc" -lt 2 ]; then break; fi
+            echo "Snyk Code error (exit $rc) on attempt $attempt"; sleep 30
+          done
+          [ "$rc" -eq 0 ] || exit "$rc"
+          types='\.(py|pyw)$'
+          tracked=$(git ls-files | grep -ciE "$types" || true)
+          analysed=$(jq --arg types "$types" '[.runs[0].properties.coverage[]? | select(.type == "SUPPORTED" and (.lang | ascii_downcase | test($types))) | .files] | add // 0' snyk-code.sarif)
+          unparsed=$(jq '[.runs[0].properties.coverage[]? | select(.type != "SUPPORTED") | .files] | add // 0' snyk-code.sarif)
+          echo "Python files tracked: $tracked, analysed: $analysed, not analysed: $unparsed"
+          if [ "$tracked" -eq 0 ] || [ "$unparsed" != "0" ] || [ "$analysed" != "$tracked" ]; then
+            echo "::error::Snyk Code did not analyse every Python file"; exit 1
+          fi
+
+  build:
+    name: Build the zip, and check it is the one the local gate tested
+    needs: check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      sha256: ${{ steps.build.outputs.sha256 }}
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # tools/release_package.py takes every member from the commit's own blobs, in a fixed order, with fixed times and modes, and
+      # stores them uncompressed, so the same commit makes the same bytes on any machine (review finding A7). Its SHA-256 has to be
+      # the one the local gate printed: that's the zip the gate on Blender 5.2 passed.
+      - name: Build the zip
+        id: build
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+          WANTED: ${{ inputs.sha256 }}
+        run: |
+          set -euo pipefail
+          mkdir release
+          name="avp_blender_plugin-$VERSION.zip"
+          python3 -I -c 'import sys; sys.path.insert(0, "tools"); import release_package; print("Built from", release_package.build_archive(".", sys.argv[1], sys.argv[2]))' "release/$name" "$GITHUB_SHA"
+          got=$(sha256sum "release/$name" | cut -c1-64)
+          echo "Python $(python3 -I -c 'import sys, zlib; print(sys.version.split()[0], "zlib", zlib.ZLIB_RUNTIME_VERSION)')"
+          if [ "$got" != "$WANTED" ]; then
+            echo "Built: $got"
+            echo "::error::The zip built here is not the one the local gate tested"
+            exit 1
+          fi
+          printf '%s  %s\n' "$got" "$name" > release/SHA256SUMS
+          cat release/SHA256SUMS
+          echo "sha256=$got" >> "$GITHUB_OUTPUT"
+
+      - name: Keep the zip for the next jobs
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-package
+          path: release/
+          if-no-files-found: error
+
+  scan:
+    name: Scan the zip on VirusTotal
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: release    # where the VirusTotal key is kept
+    permissions:
+      contents: read        # to read tools/check_virustotal.py, and nothing else
+    outputs:
+      sha256: ${{ steps.ask.outputs.sha256 }}
+      malicious: ${{ steps.ask.outputs.malicious }}
+      suspicious: ${{ steps.ask.outputs.suspicious }}
+      answered: ${{ steps.ask.outputs.answered }}
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Get the zip
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-package
+          path: release
+
+      # The key is only ever sent in the x-apikey header to www.virustotal.com. It's written to a header file only this user can
+      # read, never on a command line, and the file is removed when the step ends. Every answer is saved exactly as it came, and
+      # tools/check_virustotal.py checks it before anything here believes it; only its checked ANSWER: line is used.
+      - name: Ask VirusTotal about the zip
+        id: ask
+        shell: bash
+        env:
+          VIRUSTOTAL_API_KEY: ${{ secrets.VIRUSTOTAL_API_KEY }}
+          VERSION: ${{ inputs.version }}
+          WANTED: ${{ needs.build.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          if [ -z "$VIRUSTOTAL_API_KEY" ]; then echo "::error::The VIRUSTOTAL_API_KEY secret is missing, so the release fails closed"; exit 1; fi
+          umask 077
+          headers="$RUNNER_TEMP/vt-headers"
+          trap 'rm -f "$headers"' EXIT
+          printf 'x-apikey: %s\n' "$VIRUSTOTAL_API_KEY" > "$headers"
+          unset VIRUSTOTAL_API_KEY
+          zip="release/avp_blender_plugin-$VERSION.zip"
+          check() { python3 -I tools/check_virustotal.py "$@" | tee "$RUNNER_TEMP/said"; grep '^ANSWER: ' "$RUNNER_TEMP/said" | tail -1; }
+          check --package "$zip" --sha256 "$WANTED" >/dev/null
+          deadline=$(( $(date +%s) + 25*60 ))
+          # One question at a time, at most one every 20 seconds, so this stays inside the free key's 4 a minute.
+          ask() { sleep 20; [ "$(date +%s)" -lt "$deadline" ] || { echo "::error::VirusTotal took too long"; exit 1; }; curl -sS --max-time 120 -H @"$headers" -o "$RUNNER_TEMP/answer.json" -w '%{http_code}' "$@"; }
+          code=$(ask "https://www.virustotal.com/api/v3/files/$WANTED")
+          answer=""
+          if [ "$code" = 200 ]; then answer=$(check --answer "$RUNNER_TEMP/answer.json" --kind lookup --sha256 "$WANTED"); fi
+          if [ "$code" = 404 ] || [ "$answer" = "ANSWER: not-analysed" ]; then
+            code=$(ask -F "file=@$zip" "https://www.virustotal.com/api/v3/files")
+            [ "$code" = 200 ] || { echo "::error::VirusTotal didn't take the zip (HTTP $code)"; exit 1; }
+            id=$(check --answer "$RUNNER_TEMP/answer.json" --kind upload --sha256 "$WANTED" | sed -n 's/^ANSWER: analysis //p')
+            [ -n "$id" ] || exit 1
+            while :; do
+              code=$(ask "https://www.virustotal.com/api/v3/analyses/$id")
+              [ "$code" = 200 ] || { echo "::error::VirusTotal's analysis answer was HTTP $code"; exit 1; }
+              answer=$(check --answer "$RUNNER_TEMP/answer.json" --kind analysis --sha256 "$WANTED" --analysis-id "$id")
+              [ "$answer" = "ANSWER: waiting" ] || break
+            done
+          elif [ "$code" != 200 ]; then
+            echo "::error::VirusTotal's lookup answer was HTTP $code"; exit 1
+          fi
+          read -r _ word malicious suspicious answered <<<"$answer"
+          [ "$word" = counted ] || { echo "::error::No finished, checked count from VirusTotal"; exit 1; }
+          { echo "sha256=$WANTED"; echo "malicious=$malicious"; echo "suspicious=$suspicious"; echo "answered=$answered"; } >> "$GITHUB_OUTPUT"
+
+  draft:
+    name: Make the draft
+    needs: [check, build, scan]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write       # to make the draft release
+      id-token: write       # to record how the zip was built
+      attestations: write
+    # This job runs no code from the repository and has no copy of it.
+    steps:
+      - name: Get the zip
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-package
+          path: release
+
+      - name: Refuse if anything has changed since the checks
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+          BUILT: ${{ needs.build.outputs.sha256 }}
+          SCAN_SHA256: ${{ needs.scan.outputs.sha256 }}
+          SCAN_MALICIOUS: ${{ needs.scan.outputs.malicious }}
+          SCAN_SUSPICIOUS: ${{ needs.scan.outputs.suspicious }}
+          SCAN_ANSWERED: ${{ needs.scan.outputs.answered }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tip=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          [ "$tip" = "$GITHUB_SHA" ] || { echo "::error::main has moved on since this was checked"; exit 1; }
+          [[ "$VERSION" =~ ^(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})$ ]] || { echo "::error::The version is not one this makes"; exit 1; }
+          name="avp_blender_plugin-$VERSION.zip"
+          [ "$(wc -l < release/SHA256SUMS)" -eq 1 ] || { echo "::error::SHA256SUMS should have one line"; exit 1; }
+          [ "$(cat release/SHA256SUMS)" = "$BUILT  $name" ] || { echo "::error::SHA256SUMS is not the build's"; exit 1; }
+          [ "$(sha256sum "release/$name" | cut -c1-64)" = "$BUILT" ] || { echo "::error::The zip is not what the build made"; exit 1; }
+          [ "$SCAN_SHA256" = "$BUILT" ] || { echo "::error::VirusTotal scanned a different zip"; exit 1; }
+          for n in "$SCAN_MALICIOUS" "$SCAN_SUSPICIOUS"; do [[ "$n" =~ ^(0|[1-9][0-9]{0,3})$ ]] || { echo "::error::A count from the scan is not a whole number"; exit 1; }; done
+          [[ "$SCAN_ANSWERED" =~ ^[1-9][0-9]{0,3}$ ]] && [ "$SCAN_ANSWERED" -ge 20 ] || { echo "::error::The scan did not count enough scanners"; exit 1; }
+          gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 && { echo "::error::There is already a release of v$VERSION, maybe a draft"; exit 1; } || true
+
+      - name: Record how the zip was built
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-checksums: release/SHA256SUMS
+
+      - name: Make the draft
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+          PREVIEW: ${{ inputs.preview }}
+          BUILT: ${{ needs.build.outputs.sha256 }}
+          SCAN_MALICIOUS: ${{ needs.scan.outputs.malicious }}
+          SCAN_SUSPICIOUS: ${{ needs.scan.outputs.suspicious }}
+          SCAN_ANSWERED: ${{ needs.scan.outputs.answered }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          name="avp_blender_plugin-$VERSION.zip"
+          report="https://www.virustotal.com/gui/file/$BUILT"
+          flagged=$(( SCAN_MALICIOUS + SCAN_SUSPICIOUS ))
+          {
+            if [ "$flagged" -gt 0 ]; then echo "**VirusTotal: $flagged of $SCAN_ANSWERED engines flagged this zip. Don't publish before reading $report**"; echo; fi
+            echo "AVP_BlenderPlugin $VERSION, a fork of AdiJager's BlendRIF (GPL-3.0-or-later)."
+            echo
+            echo "Built from commit $GITHUB_SHA by run $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID."
+            echo
+            echo "SHA-256 of $name: $BUILT"
+            echo
+            echo "VirusTotal: $SCAN_MALICIOUS malicious, $SCAN_SUSPICIOUS suspicious, of $SCAN_ANSWERED engines: $report"
+            echo
+            echo "To check this file is what that run built: gh attestation verify $name --repo $GITHUB_REPOSITORY"
+            echo
+            echo "Melanikus writes what changed here before publishing."
+          } > notes.md
+          also=()
+          if [ "$PREVIEW" = true ]; then also+=(--prerelease); fi
+          gh release create "v$VERSION" "release/$name" release/SHA256SUMS --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" --title "AVP_BlenderPlugin v$VERSION" --notes-file notes.md "${also[@]}"
+          made=$(gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" --json isDraft,targetCommitish --jq '"\(.isDraft) \(.targetCommitish)"')
+          [ "$made" = "true $GITHUB_SHA" ] || { echo "::error::The release is not a draft at the checked commit"; exit 1; }
+          if [ "$flagged" -gt 0 ]; then echo "::error::The draft is made, but $flagged engines flagged the zip: read $report first"; exit 1; fi
+          echo "The draft of v$VERSION is ready for Melanikus to read and publish."

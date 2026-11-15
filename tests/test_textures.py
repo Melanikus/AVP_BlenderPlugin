@@ -16,7 +16,7 @@ import os
 import tempfile
 import unittest
 
-from avp_rif_importer.textures import (
+from avp_blender_plugin.textures import (
     TextureStats, TextureResolution,
     build_texture_index, normalize_path, resolve_texture,
     material_name, disambiguate_name, GENERIC_DIRS,

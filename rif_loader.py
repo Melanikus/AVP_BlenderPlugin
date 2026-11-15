@@ -35,35 +35,31 @@ from .config import RIF_ALIASES
 
 def load_rif_auto(raw: bytes, verbose: bool = False) -> bytes | None:
     """Decompress a RIF buffer; returns the decoded chunk stream or None."""
-    if len(raw) < 12:
-        return None
+    if not 12 <= len(raw) <= 32 * 1024 * 1024:
+        raise ValueError("RIF input size must be 12 bytes to 32 MiB")
     if raw.startswith(RIF_MAGIC):
         if verbose:
             log.info("    Format: REBCRIF1")
-        try:
-            dec = decompress_rif(raw)
-        except ValueError as e:
-            log.error(f"    Huffman error: {e}")
-            return None
+        dec = decompress_rif(raw)
         if dec is None or len(dec) < 12:
             log.warning("    decompressed stream is empty "
                         f"({0 if dec is None else len(dec)} bytes)")
             return None
-        if parse_chunks(dec) is None:
-            log.warning("    top-level chunk stream did not parse cleanly.")
+        if not dec.startswith(INFF_MAGIC):
+            raise ValueError("Decoded RIF has no REBINFF2 root")
+        import struct
+        if struct.unpack_from("<i", dec, 8)[0] != len(dec):
+            raise ValueError("Decoded RIF root length disagrees with buffer")
         return dec
     elif raw.startswith(INFF_MAGIC):
         if verbose:
             log.info("    Format: REBINFF2")
+        import struct
+        if struct.unpack_from("<i", raw, 8)[0] != len(raw):
+            raise ValueError("RIF root length disagrees with file")
         return raw
     else:
-        # Allow a REBINFF2 payload to be embedded at some offset.
-        idx = raw.find(INFF_MAGIC)
-        if idx >= 0:
-            if verbose:
-                log.info(f"    Format: REBINFF2 @ {idx}")
-            return raw[idx:]
-        return None
+        raise ValueError("Unknown RIF file signature")
 
 
 def build_rif_index(dirs: list[str]) -> dict[str, str]:

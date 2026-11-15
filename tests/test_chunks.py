@@ -5,12 +5,12 @@ from __future__ import annotations
 
 import unittest
 
-from avp_rif_importer.chunks import (
+from avp_blender_plugin.chunks import (
     parse_chunks, find_all_chunks, walk_chunks,
     collect_rebshape, collect_rbobject,
     ShapeGroup, ObjectGroup,
 )
-from avp_rif_importer.chunk_ids import Chunk
+from avp_blender_plugin.chunk_ids import Chunk
 
 from ._helpers import make_chunk
 

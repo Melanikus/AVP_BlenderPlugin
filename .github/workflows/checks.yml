@@ -1,0 +1,220 @@
+# The security gates of AVP_BlenderPlugin (AvP Tao #1: security is paramount; a failing check blocks the merge for everyone, admins
+# included). DRAFT by Apone, 2026-11-14, for Hicks's security read. Newt commits it as .github/workflows/checks.yml.
+#
+# Four jobs, for every pull request into main, every push to it, and every night:
+#   - No precompiled code: no library, DLL, executable, Python bytecode or archive is committed. Checked by name and by each file's
+#     first bytes, so a renamed one is caught too. Images and other resources are fine.
+#   - No scanner told to look away: nothing in the repository switches off or silences a scanner (the same words AvPx refuses).
+#   - The safety screen: the add-on's own Python never starts programs, opens the network, loads native code, runs text as code,
+#     unpickles or deletes folder trees. The same words Bishop's installer screens every zip for.
+#   - Snyk Code (SAST) on every Python file, and it FAILS if Snyk skipped even one: a file the scanner can't read is a blind spot,
+#     not a pass.
+#   - No third-party packages: the plugin uses only Python's standard library and Blender's bpy, so there is nothing for OSV or Snyk
+#     Open Source to scan. That's checked here, not assumed. The day a package appears, this job fails until OSV-Scanner is added
+#     to this gate.
+# ANY finding or scan error fails its job. A finding is resolved only by fixing it in the code; nothing is ignored, parked or
+# excluded. If Snyk or GitHub Actions is unavailable, or the SNYK_TOKEN secret is missing, the checks fail and nothing merges.
+# TAKING-OVER.md says what each gate proves, and what to do if a tool is gone: find a replacement that proves the same thing.
+name: Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  # Every night, so a Snyk rule published today is applied by morning, even when nobody is committing.
+  schedule:
+    - cron: "41 6 * * *"
+
+# Read only. No job here can change the repository.
+permissions:
+  contents: read
+
+# The gate's own engine is pinned: an exact Snyk CLI release, checked against its published hash before it runs (the same pin as
+# AvPx's snyk.yml). Updating it is a deliberate, reviewed change here.
+env:
+  SNYK_CLI_VERSION: v1.1308.3
+  SNYK_CLI_SHA256: 5f323f45885341ea1473639859271925912ece82a2f77bc146bb4468f9838840
+
+jobs:
+  repository-rules:
+    name: No precompiled code, no look-away, the safety screen, no packages
+    runs-on: ubuntu-24.04   # pinned, so a runner-image migration never changes the gate
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1, the same pin AvPx uses
+        with:
+          persist-credentials: false
+
+      # The plugin is Python source, read by Blender. Nothing compiled belongs here: not a DLL, not a .pyd (a DLL), not Python
+      # bytecode (.pyc), not an archive that could hold any of those. Each file's name is checked, and also its first bytes, because
+      # every kind of compiled file starts with its own signature, so a DLL renamed to .dat is still caught.
+      - name: Fail if precompiled code, or an archive, is in the repository
+        shell: bash
+        run: |
+          found=$(git ls-files | grep -iE '\.(dll|lib|exp|exe|obj|o|a|so|dylib|pdb|ilk|ocx|sys|pyd|pyc|pyo|whl|egg|zip|7z|rar|cab|gz|tgz|bz2|xz|zst|tar|msi|jar|class)$' || true)
+          while IFS= read -r -d '' file; do
+            [ -f "$file" ] || continue
+            signature=$(head -c 8 -- "$file" | od -An -tx1 | tr -d ' \n')
+            # A plain tar file has no mark at its start. Its mark, "ustar", is 257 bytes in.
+            tar_mark=$(head -c 262 -- "$file" | tail -c +258 | od -An -tx1 | tr -d ' \n')
+            case "$signature" in
+              4d5a*)                                   ;; # Windows program or DLL, a .pyd included
+              7f454c46*)                               ;; # Linux program or shared library
+              feedface*|feedfacf*|cefaedfe*|cffaedfe*) ;; # macOS program
+              cafebabe*)                               ;; # macOS universal program, or Java class
+              213c617263683e*)                         ;; # static library
+              0061736d*)                               ;; # WebAssembly
+              4c01*|6486*|64aa*)                       ;; # Windows object file
+              ????0d0a*)                               ;; # Python bytecode: a 2-byte version number, then "\r\n"
+              504b0304*|504b0506*|504b0708*)           ;; # zip, and files built on it such as a wheel or a jar
+              377abcaf271c*)                           ;; # 7z
+              526172211a07*)                           ;; # rar
+              4d534346*)                               ;; # cab
+              1f8b*)                                   ;; # gzip
+              d0cf11e0a1b11ae1*)                       ;; # msi
+              425a683[1-9]31415926*)                   ;; # bzip2
+              fd377a585a00*)                           ;; # xz
+              28b52ffd*)                               ;; # zstd
+              *) [ "$tar_mark" = 7573746172 ] || continue ;;
+            esac
+            found="$found"$'\n'"$file"
+          done < <(git ls-files -z)
+          found=$(printf '%s\n' "$found" | sed '/^$/d' | sort -u)
+          if [ -n "$found" ]; then
+            echo "$found"
+            echo "::error::Precompiled code, or an archive that could hold it, is in the repository"
+            exit 1
+          fi
+          echo "No precompiled code found."
+
+      # Scanners can be told to look away with a comment or a settings file. We fix findings, so none of those may exist. The words
+      # are AvPx's, plus Python's own linters' ("noqa", "type: ignore", "pragma: no cover" don't silence a security scanner, so they
+      # aren't on the list; "nosec" silences Bandit, so it is).
+      - name: Fail if anything tells a scanner to look away
+        shell: bash
+        run: |
+          found=$(git grep -n -i -E 'deepcode ignore|snyk:ignore|lgtm\[|codeql\[|NOSONAR|nolint|nosec' -- . ':!.github' || true)
+          files=$(git ls-files | grep -E '(^|/)\.(snyk|dcignore)$' || true)
+          if [ -n "$found$files" ]; then
+            echo "$found"
+            echo "$files"
+            echo "::error::Something in the repository suppresses a scanner"
+            exit 1
+          fi
+          echo "No scanner suppressions found."
+
+      # The add-on's own Python is what runs inside a player's Blender. It never starts a program, opens the network, loads native
+      # code, runs text as code, unpickles, or deletes a folder tree. These are the words Bishop's installer screens every zip for
+      # (the local automatic installer), so a change that would be refused at install is refused here first.
+      # tests/ and tools/ are not part of the add-on (they never go into the zip), so they aren't screened here; Snyk Code reads them.
+      # eval(, exec( and compile( are caught at the start of a line too, and not when they follow a dot or a letter, so re.compile( and
+      # literal_eval( are allowed (Hicks's security read, W1 and W2, 2026-11-14).
+      - name: Fail if the add-on's Python does anything the safety screen forbids
+        shell: bash
+        run: |
+          screen='subprocess|socket|urllib|http\.client|http\.server|import requests|ctypes|os\.system|os\.popen|os\.startfile|(^|[^A-Za-z0-9_.])(eval|exec|compile)\(|pickle|marshal|importlib|__import__|multiprocessing|ftplib|smtplib|telnetlib|xmlrpc|webbrowser|bpy\.ops\.wm\.url_open|shutil\.rmtree'
+          # The screen proves itself first: each of these lines must be caught, and each allowed line must not be, or the step fails.
+          for bad in 'eval(x)' 'exec(x)' 'compile(x)' 'y = eval(x)' 'import subprocess' 'import importlib' 'marshal.loads(b)' \
+                     'os.startfile(p)' 'bpy.ops.wm.url_open(url=u)' 'from http.server import x' 'shutil.rmtree(p)' '__import__("os")'; do
+            printf '%s\n' "$bad" | grep -qE "$screen" || { echo "::error::The safety screen doesn't catch: $bad"; exit 1; }
+          done
+          for fine in 'pattern = re.compile(x)' 'ast.literal_eval(x)' 'medieval(x)'; do
+            if printf '%s\n' "$fine" | grep -qE "$screen"; then echo "::error::The safety screen wrongly catches: $fine"; exit 1; fi
+          done
+          addon=$(git ls-files '*.py' | grep -v -E '^(tests|tools)/' || true)
+          if [ -z "$addon" ]; then
+            echo "::error::No add-on Python files found, so the screen would check nothing"
+            exit 1
+          fi
+          count=$(printf '%s\n' "$addon" | wc -l)
+          hits=$(printf '%s\n' "$addon" | tr '\n' '\0' | xargs -0 grep -n -E "$screen" || true)
+          if [ -n "$hits" ]; then
+            echo "$hits"
+            echo "::error::The add-on's Python uses something the safety screen forbids"
+            exit 1
+          fi
+          echo "Safety screen: $count add-on Python files, no hits."
+
+      # The plugin uses only Python's standard library and Blender's bpy. A third-party package (a requirements file, a wheel, a
+      # manifest "wheels" list, a vendored package folder) would be code nobody here has scanned, so this fails until OSV-Scanner is
+      # added to this gate to scan it. This is the check that "OSV has nothing to scan" stays true, not a skip.
+      - name: Fail if a third-party package arrives
+        shell: bash
+        run: |
+          found=$(git ls-files | grep -iE '(^|/)(requirements[^/]*\.txt|pyproject\.toml|setup\.py|setup\.cfg|Pipfile(\.lock)?|poetry\.lock|uv\.lock|environment\.ya?ml|[^/]*\.dist-info/|site-packages/|vendor/|wheels/)' || true)
+          if grep -qE '^[[:space:]]*wheels[[:space:]]*=' blender_manifest.toml; then
+            found="$found"$'\n'"blender_manifest.toml: a wheels list"
+          fi
+          found=$(printf '%s\n' "$found" | sed '/^$/d')
+          if [ -n "$found" ]; then
+            echo "$found"
+            echo "::error::A third-party package is in the repository. Add OSV-Scanner to this gate before it can merge."
+            exit 1
+          fi
+          echo "No third-party packages: nothing for OSV or Snyk Open Source to scan."
+
+  snyk-code:
+    name: Snyk Code (SAST)
+    runs-on: ubuntu-24.04   # pinned, as above
+    permissions:
+      contents: read
+      security-events: write   # to upload the results to code scanning
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the pinned Snyk CLI
+        shell: bash
+        run: |
+          curl -fsSL "https://downloads.snyk.io/cli/$SNYK_CLI_VERSION/snyk-linux" -o "$RUNNER_TEMP/snyk"
+          echo "$SNYK_CLI_SHA256  $RUNNER_TEMP/snyk" | sha256sum -c -
+          chmod +x "$RUNNER_TEMP/snyk"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      # Exit 1 is findings, which fail at once. Exit 2 or more is an error, retried; it fails if it never clears. A missing token
+      # fails here, by name, instead of as a vague error.
+      - name: Snyk Code (SAST)
+        shell: bash
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          if [ -z "$SNYK_TOKEN" ]; then
+            echo "::error::The SNYK_TOKEN secret is missing, so the gate fails closed. Melanikus adds it (the release checklist)."
+            exit 1
+          fi
+          for attempt in 1 2 3; do
+            if snyk code test --sarif-file-output=snyk-code.sarif; then rc=0; else rc=$?; fi
+            if [ "$rc" -lt 2 ]; then break; fi
+            echo "Snyk Code error (exit $rc) on attempt $attempt"
+            sleep 30
+          done
+          exit "$rc"
+
+      # Snyk reports how many files it read in the SARIF. A file it could not parse is silently skipped and the scan still passes,
+      # so its count is compared with what git tracks. Anything Snyk calls other than SUPPORTED counts as not read. A missing report
+      # fails here too, and so does a count of zero, which would mean this check compared nothing.
+      - name: Fail if Snyk Code skipped any Python file
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          types='\.(py|pyw)$'
+          tracked=$(git ls-files | grep -ciE "$types" || true)
+          analysed=$(jq --arg types "$types" '[.runs[0].properties.coverage[]? | select(.type == "SUPPORTED" and (.lang | ascii_downcase | test($types))) | .files] | add // 0' snyk-code.sarif)
+          unparsed=$(jq '[.runs[0].properties.coverage[]? | select(.type != "SUPPORTED") | .files] | add // 0' snyk-code.sarif)
+          echo "Python files tracked by git: $tracked, analysed by Snyk: $analysed, not analysed: $unparsed"
+          jq -c '.runs[0].properties.coverage' snyk-code.sarif
+          if [ "$tracked" -eq 0 ] || [ "$unparsed" != "0" ] || [ "$analysed" != "$tracked" ]; then
+            echo "::error::Snyk Code did not analyse every Python file"
+            exit 1
+          fi
+
+      - name: Upload Snyk Code results
+        if: ${{ !cancelled() && hashFiles('snyk-code.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@1fc58d04a4d4374f921bdac573c3811c240f9c26 # v4.39.2
+        with:
+          sarif_file: snyk-code.sarif
+          category: snyk-code

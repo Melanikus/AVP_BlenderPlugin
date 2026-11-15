@@ -5,11 +5,11 @@ from __future__ import annotations
 import struct
 import unittest
 
-from avp_rif_importer.parsers.bitmaps import (
+from avp_blender_plugin.parsers.bitmaps import (
     parse_bitmap_list, parse_image_descriptor, parse_matchimg, parse_clrlookp,
     ImageDescriptor, MatchImgRule,
 )
-from avp_rif_importer.materials import (
+from avp_blender_plugin.materials import (
     build_matchimg_index, apply_matchimg_index, apply_matchimg_rule,
 )
 

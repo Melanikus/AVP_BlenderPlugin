@@ -125,6 +125,7 @@ class MorphGroup:
 class ScanResult:
     """Everything the importer reads from a decoded RIF before bpy is touched."""
     level_name: str = "Unknown"
+    environment_scale: float = 1.0
     bmp_names: dict = field(default_factory=dict)
     matchimg_index: dict = field(default_factory=dict)
     clrlookp_table: list | None = None
@@ -214,6 +215,17 @@ class RifScanner:
 
     def _scan_header(self, decoded, scan, resync_max):
         """Read RIFFNAME, BMPNAMES, MATCHIMG and CLRLOOKP."""
+        import math
+        import struct
+        scales = find_all_chunks(decoded, "ENVSDSCL", max_depth=8, resync_max=resync_max)
+        if len(scales) > 1:
+            raise ValueError("Duplicate ENVSDSCL")
+        if scales:
+            if len(scales[0]) < 8:
+                raise ValueError("Truncated ENVSDSCL")
+            scan.environment_scale = struct.unpack_from("<d", scales[0])[0]
+            if not math.isfinite(scan.environment_scale) or not 0 < scan.environment_scale <= 1000:
+                raise ValueError("ENVSDSCL exceeds supported scale bounds")
         level = _find_level_name(decoded, resync_max)
         if level is not None:
             scan.level_name = level

@@ -1,8 +1,12 @@
-# AvP RIF Importer
+# AVP_BlenderPlugin
 
-Blender add-on that imports models, levels, characters, textures and
+AVP_BlenderPlugin is a fork of AdiJager's BlendRIF, licensed under
+GPL-3.0-or-later; AdiJager's copyright and original credit are retained.
+It imports models, levels, characters, textures and
 animations from **Aliens vs Predator (1999, Rebellion)** into a
 Blender scene. Materials are set up for Eevee by default.
+
+tested on Blender 5.2
 
 ![Meat Factory level imported into Blender](docs/rif_geometry.jpg)
 
@@ -12,6 +16,11 @@ Blender scene. Materials are set up for Eevee by default.
 
 - **Geometry** — static meshes with UVs, per-shape materials, and
   correct pivots.
+- **Local NEXT module edits** — append a box/ramp in Edit Mode to an
+  existing ordinary module, choose an existing RIM, and export its
+  vertices/faces/UVs/normals/bounds. Original geometry stays intact.
+  Unsupported auxiliary/animated/shared shapes refuse; new baked colours
+  copy the nearest authored vertex, rather than rebaking lighting.
 - **Textures** — loaded from the game's archives, with palette
   tinting for untextured polygons.
 - **Lighting** — point and spot lights placed per level.
@@ -28,7 +37,7 @@ Blender scene. Materials are set up for Eevee by default.
 
 ## Requirements
 
-- **Blender 4.2 or newer.**
+- **Blender 5.2 or newer.**
 - **Aliens vs Predator (1999) game files** with the `shape_rifs/`
   directory from the *AvP Editing Tools* package placed next to the
   other game asset folders. The importer needs it to resolve external
@@ -45,23 +54,26 @@ required.
 
 ## Installation
 
-### Blender 4.2+ (Extensions platform)
+### Blender 5.2+ (Extensions platform)
 
-Once the add-on is listed on
-[extensions.blender.org](https://extensions.blender.org/), it can be
-installed from Blender:
+The local release candidate is `avp_blender_plugin-next.zip`, with
+extension id `avp_blender_plugin`. No online listing or published release
+is claimed. Follow [INSTALL.md](INSTALL.md) after its package gate passes.
 
-1. Open **Edit → Preferences → Get Extensions**.
-2. Search for **Aliens vs Predator RIF Importer**.
-3. Click **Install**.
+Version 1.3.74 includes 1.3.73's ordinary texture-corner correction:
+finite stored texels within +/-16,777,216, with untouched large tiling
+coordinates preserved. Earlier 1.3.72 refuses corners past +/-16383.
+Animated texture writes remain unsupported. Release builds check every
+tracked file and ZIP member for private local-path markers; internal
+development notes are not published.
 
-### Blender 4.2 – 5.x (manual ZIP)
+### Blender 5.2+ (manual ZIP)
 
-1. Download `avp_rif_importer.zip` from the
-   [latest release](https://github.com/AdiJager/BlendRIF/releases).
+1. Use the locally proved `avp_blender_plugin-next.zip`; the future release
+   repository is [AVP_BlenderPlugin](https://github.com/Melanikus/AVP_BlenderPlugin).
 2. Open **Edit → Preferences → Add-ons**.
 3. Click **Install from Disk…** and select the ZIP.
-4. Enable the checkbox next to **Aliens vs Predator RIF Importer**.
+4. Enable the checkbox next to **AVP_BlenderPlugin**.
 
 If you are upgrading from an earlier version, remove the old add-on
 first and restart Blender — reinstalling the ZIP alone is not enough
@@ -71,7 +83,7 @@ because Blender keeps the previous module in memory until restart.
 
 ## Usage
 
-1. **File → Import → Aliens vs Predator RIF (.rif)**.
+1. **File → Import → AVP_BlenderPlugin RIF (.rif)**.
 2. Pick a `.RIF` file. The importer locates the game's asset folders
    automatically from directories near the file.
 3. Pick a preset or tweak the options (see below).
@@ -120,14 +132,13 @@ afterwards.
 - **Backface Culling** — match the game's renderer, which hides
   designer geometry that is invisible in-game. Turn off to inspect
   that geometry in Blender.
-- **Extract FFL** — unpack textures from the game's FFL archives
-  before importing. Disabled automatically when Import Materials is
-  off.
+Textures are read directly from local RIM files or the game's FFL
+archives into packed Blender images; no disk extraction is needed.
 
 Textures are resolved by the path stored in the RIF, so two textures
 that share a file name (the game reuses `lights.rim` and friends across
 levels) stay distinct; materials are named after that path
-(`Stat101_Common_Lights`) and record it in `avp_tex_path`. The import
+(`Stat101_Common_Lights`) and record it in `avp_blender_plugin_tex_path`. The import
 summary reports how many references resolved by path, by a unique file
 name, ambiguously, or not at all.
 

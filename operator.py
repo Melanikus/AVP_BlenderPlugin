@@ -17,7 +17,7 @@ in a dedicated module:
     operator_ui.py       draw() body
     presets.py           PRESET_ITEMS + apply_preset
     operator_stats.py    ImportStats + ImportCounters
-    ffl_bridge.py        optional extraction of fastfile/*.ffl
+    memory_textures.py   packed texture reads from local RIM/FFL assets
 
 Conventions:
   - OBJHEAD1.pos / .quat are ABSOLUTE (world) rest transforms.
@@ -45,13 +45,14 @@ from __future__ import annotations
 import logging
 import math
 import os
+import struct
 import time
 
 import bpy
 
 from ._version import __version_str__
 from .discovery import discover_paths
-from .ffl_bridge import ensure_textures
+from .memory_textures import MemoryTextures, find_game_root
 from .rif_loader import load_rif_auto, build_rif_index
 from .utils import log, configure_logging
 from .config import (
@@ -64,6 +65,7 @@ from .textures import (
     TextureIndex, TextureStats, build_texture_index,
 )
 from .scan import RifScanner
+from .level_validation import read_level
 from .shape_processor import ImportContext
 
 from .presets import PRESET_ITEMS, apply_preset
@@ -81,6 +83,8 @@ from .stages_animation import (
     run_stage_level_animations, run_stage_char_animations,
     StageLevelAnimConfig, StageCharAnimConfig,
 )
+from .raw_rif import SOURCE_PROPERTY, read_tree, retain_source
+from .avp_lighting import import_source_lights
 
 
 # Legacy import flags. These were once user-visible operator properties;
@@ -91,11 +95,11 @@ _UV_INT16 = False        # always float
 _USE_ROTATION = True     # always apply rotation
 
 
-class IMPORT_OT_avp_rif(bpy.types.Operator):
+class IMPORT_OT_avp_blender_plugin(bpy.types.Operator):
     """Import an AvP (1999) .RIF file into the current scene."""
 
-    bl_idname = "import_scene.avp_rif"
-    bl_label = "Import AvP RIF"
+    bl_idname = "import_scene.avp_blender_plugin"
+    bl_label = "Import AVP_BlenderPlugin RIF"
     bl_options = {'REGISTER', 'UNDO'}
 
     # --- preset ---------------------------------------------------------
@@ -111,6 +115,15 @@ class IMPORT_OT_avp_rif(bpy.types.Operator):
     filepath: bpy.props.StringProperty(subtype="FILE_PATH")
     filter_glob: bpy.props.StringProperty(default="*.rif;*.RIF",
                                           options={'HIDDEN'})
+    game_data: bpy.props.StringProperty(
+        name="Game Data", subtype='DIR_PATH',
+        description="Game data copy containing fastfile or graphics; blank discovers it beside the RIF")
+    mvp_only: bpy.props.BoolProperty(
+        name="Strict Level Import", default=True,
+        description="Validated geometry, textures and optional native lights; skips legacy animation and marker stages")
+    editable_game_objects: bpy.props.BoolProperty(
+        name="Editable Game Objects", default=False,
+        description="Add selectable generator and prelight markers for AvP parameter editing; these are not live game behaviors")
 
     # === Geometry =======================================================
     scale: bpy.props.FloatProperty(
@@ -195,15 +208,6 @@ class IMPORT_OT_avp_rif(bpy.types.Operator):
                     "geometry in Blender (result will not match the game). "
                     "Only affects Eevee (Material Preview / Render); Cycles "
                     "ignores use_backface_culling")
-    extract_ffl: bpy.props.BoolProperty(
-        name="Extract FFL", default=True,
-        description="When Import Materials is ON, look for a 'fastfile' "
-                    "directory near the RIF and extract its .ffl texture "
-                    "archives to 'fastfile/_ffl_unpacked/' if the latter "
-                    "is missing or empty. Subsequent imports reuse the "
-                    "cached PNG files. Skipped when Import Materials is "
-                    "OFF, since extracted textures would be unused")
-
     # === Data ===========================================================
     import_dummy: bpy.props.BoolProperty(
         name="Import DUMMYOBJ", default=True,
@@ -244,9 +248,14 @@ class IMPORT_OT_avp_rif(bpy.types.Operator):
                     "stored in the same chunk are never imported - AVPPATH2 "
                     "patrol paths replaced them before release")
     import_lights: bpy.props.BoolProperty(
-        name="Import LIGHTSET", default=True,
-        description="Import STDLIGHT entries from LIGHTSET as Blender point/spot "
-                    "lights with color, brightness and range mapped from the RIF")
+        name="Import AvP Lights", default=True,
+        description="Strict import creates editable Blender point lights from the game's first NORMALLT "
+                    "set and placed lights; legacy import uses LIGHTSET point/spot lights. "
+                    "Power is approximate; Blender light edits are not exported to RIF")
+    animate_placed_lights: bpy.props.BoolProperty(
+        name="Animate Placed Lights", default=True,
+        description="Animate native mesh-light emitters using authored colour/brightness strobe timing "
+                    "and reproducible flicker. Play the timeline; no game-trigger simulation or light RIF export")
 
     # === Animation ======================================================
     animate_objects: bpy.props.BoolProperty(
@@ -308,16 +317,32 @@ class IMPORT_OT_avp_rif(bpy.types.Operator):
         # modified; only a failed import rolls back to the pre-import
         # value so the preview speed of later imports is unaffected.
         saved_fps = context.scene.render.fps
+        previous_sources = context.scene.get(SOURCE_PROPERTY)
+        saved_sources = previous_sources.to_dict() if previous_sources is not None else None
+        before = {name: set(getattr(bpy.data, name)) for name in
+                  ("objects", "meshes", "lights", "actions", "materials", "images", "collections", "texts")}
 
         try:
-            return self._run_pipeline(context, saved_fps)
-        except Exception as e:                              # noqa: BLE001
+            result = self._run_pipeline(context, saved_fps)
+            if result == {'FINISHED'}:
+                return result
+            raise ValueError(f"{os.path.basename(self.filepath)}: import did not complete")
+        except (ValueError, RuntimeError, OSError, struct.error) as e:
             log.exception(f"Import failed: {type(e).__name__}: {e}")
+            for name, previous in before.items():
+                datablocks = getattr(bpy.data, name)
+                for block in set(datablocks) - previous:
+                    datablocks.remove(block, do_unlink=True)
+            if saved_sources is None:
+                if SOURCE_PROPERTY in context.scene:
+                    del context.scene[SOURCE_PROPERTY]
+            else:
+                context.scene[SOURCE_PROPERTY] = saved_sources
             if context.scene.render.fps != saved_fps:
                 context.scene.render.fps = saved_fps
                 log.info(f"Restored scene FPS to {saved_fps} "
                          f"(import did not complete)")
-            self.report({'ERROR'}, f"Import failed: {type(e).__name__}: {e}")
+            self.report({'ERROR'}, f"{os.path.basename(self.filepath)}: {type(e).__name__}: {e}")
             return {'CANCELLED'}
 
     def _run_pipeline(self, context, saved_fps):
@@ -337,7 +362,6 @@ class IMPORT_OT_avp_rif(bpy.types.Operator):
         log.info(f"Materials: roughness={MAT_ROUGHNESS}, specular={MAT_SPECULAR}")
         log.info(f"Backface Culling: "
                  f"{'ON' if self.cull_backfaces else 'OFF'}")
-        log.info(f"Extract FFL: {'ON' if self.extract_ffl else 'OFF'}")
         log.info(f"Import Morph: {'ON' if self.import_morph else 'OFF'}")
         log.info(f"Diagnostics: {'ON' if self.diagnostics_mode else 'OFF'}")
         log.info(f"Mark Missing SHPEXTFL: "
@@ -346,21 +370,12 @@ class IMPORT_OT_avp_rif(bpy.types.Operator):
 
         try:
             with open(self.filepath, 'rb') as f:
-                raw = f.read()
+                if not 12 <= os.fstat(f.fileno()).st_size <= 32 * 1024 * 1024:
+                    raise ValueError("RIF input size exceeds bounds")
+                raw = f.read(32 * 1024 * 1024 + 1)
         except OSError as e:
             self.report({'ERROR'}, f"Read error: {e}")
             return {'CANCELLED'}
-
-        # Optionally extract fastfile/*.ffl -> fastfile/_ffl_unpacked/
-        # before discover_paths looks for the texture directory. Skipped
-        # when extract_ffl is off, when Import Materials is off, or when
-        # the cache already contains PNG files.
-        ffl_result = ensure_textures(
-            self.filepath,
-            enabled=self.extract_ffl,
-            materials=self.import_materials,
-        )
-        log.info(f"FFL extract: {ffl_result.status} - {ffl_result.message}")
 
         discovered = discover_paths(self.filepath)
         log.info(f"Shape RIFs: {discovered.shape_rifs or '(not found)'}")
@@ -380,7 +395,8 @@ class IMPORT_OT_avp_rif(bpy.types.Operator):
             import_materials=self.import_materials,
             fallback_level_name=base,
         )
-        scan = scanner.scan(decoded)
+        scan = read_level(decoded) if self.mvp_only else scanner.scan(decoded)
+        raw_tree = read_tree(decoded)
 
         if self.diagnostics_mode:
             self.report({'INFO'}, "Diagnostics complete.")
@@ -395,13 +411,11 @@ class IMPORT_OT_avp_rif(bpy.types.Operator):
         log.info(f"Created collection: {cols['__main__'].name}")
 
         tex_stats = TextureStats()
-        if self.import_materials and discovered.textures:
+        if self.import_materials:
             t = time.perf_counter()
-            tex_idx = build_texture_index(discovered.textures)
+            tex_idx = MemoryTextures(find_game_root(self.filepath, self.game_data))
             dt_tex = time.perf_counter() - t
-            log.info(f"Textures: {len(tex_idx.by_path)} path key(s), "
-                     f"{tex_idx.n_files} file(s), "
-                     f"{tex_idx.n_ambiguous_names} ambiguous name(s) "
+            log.info(f"Textures: {len(tex_idx.entries)} archive path(s) "
                      f"({dt_tex*1000:.0f} ms)")
         elif not self.import_materials:
             tex_idx = TextureIndex()
@@ -428,7 +442,7 @@ class IMPORT_OT_avp_rif(bpy.types.Operator):
         ext_stats = {"with_extfl": 0, "resolved": 0}
 
         ctx = ImportContext(
-            base=base, scale=self.scale,
+            base=base, scale=self.scale * scan.environment_scale,
             bmp_names=scan.bmp_names, tex_idx=tex_idx,
             bm_mode=self.bitmap_mode,
             uv_int16_mode=_UV_INT16,
@@ -462,6 +476,8 @@ class IMPORT_OT_avp_rif(bpy.types.Operator):
 
         t = time.perf_counter()
         sub_timings = run_stage_geometry(scan, ctx, stats, cols["geometry"])
+        if self.mvp_only:
+            context.scene["avp_blender_plugin_textures_not_found"] = tex_stats.missing
         state["timings"]["Stage 1 Geometry"] = time.perf_counter() - t
         if sub_timings:
             state["timings"]["  1a Parse"] = sub_timings["parse"]
@@ -491,6 +507,33 @@ class IMPORT_OT_avp_rif(bpy.types.Operator):
                                                      self.auto_smooth_angle)
             state["timings"]["Stage 1b AutoSmooth"] = time.perf_counter() - t
             log.info(f"Applied Auto Smooth to {counters.smooth} mesh(es)")
+
+        if self.mvp_only:
+            from .texture_picker import bitmap_sources
+            text = retain_source(context.scene, cols["__main__"], decoded, raw_tree,
+                                 self.filepath, self.scale * scan.environment_scale,
+                                 include_markers=self.editable_game_objects, file_raw=raw,
+                                 texture_root=tex_idx.root if isinstance(tex_idx, MemoryTextures) else "",
+                                 texture_sources=bitmap_sources(scan.bmp_names, scan.matchimg_index),
+                                 texture_images={key: image.name for key, image in tex_idx.images.items()}
+                                 if isinstance(tex_idx, MemoryTextures) else {})
+            if self.import_lights:
+                counters.lights = import_source_lights(text, cols["lights"], cols["geometry"],
+                                                      context.scene, self.animate_placed_lights)
+                log.info("Imported %d native AvP light(s); Blender power is approximate; no light RIF export",
+                         counters.lights)
+            print_summary(self, scan, state, counters, ctx)
+            visible_views = 0
+            if context.window is not None:
+                for area in context.window.screen.areas:
+                    if area.type == 'VIEW_3D':
+                        area.spaces.active.shading.type = 'MATERIAL'
+                        if self.import_lights:
+                            area.spaces.active.shading.use_scene_lights = True
+                        visible_views += 1
+            if visible_views:
+                self.report({'INFO'}, "Textures visible: switched the 3D view to Material Preview")
+            return {'FINISHED'}
 
         t = time.perf_counter()
         run_stage_lights(
@@ -552,22 +595,22 @@ class IMPORT_OT_avp_rif(bpy.types.Operator):
         return {'RUNNING_MODAL'}
 
 
-class IMPORT_OT_avp_rif_menu(bpy.types.Operator):
+class IMPORT_OT_avp_blender_plugin_menu(bpy.types.Operator):
     """Thin wrapper operator that invokes the main importer from the menu."""
 
-    bl_idname = "import_scene.avp_rif_menu"
-    bl_label = "Aliens vs Predator RIF (.rif)"
+    bl_idname = "import_scene.avp_blender_plugin_menu"
+    bl_label = "AVP_BlenderPlugin RIF (.rif)"
 
     def execute(self, context):
         """Open the main importer's file selector."""
-        bpy.ops.import_scene.avp_rif('INVOKE_DEFAULT')
+        bpy.ops.import_scene.avp_blender_plugin('INVOKE_DEFAULT')
         return {'FINISHED'}
 
 
 def menu_func_import(self, context):
     """Append the add-on entry to File > Import."""
-    self.layout.operator(IMPORT_OT_avp_rif_menu.bl_idname,
-                         text="Aliens vs Predator RIF (.rif)")
+    self.layout.operator(IMPORT_OT_avp_blender_plugin_menu.bl_idname,
+                         text="AVP_BlenderPlugin RIF (.rif)")
 
 
-classes = (IMPORT_OT_avp_rif, IMPORT_OT_avp_rif_menu)
+classes = (IMPORT_OT_avp_blender_plugin, IMPORT_OT_avp_blender_plugin_menu)

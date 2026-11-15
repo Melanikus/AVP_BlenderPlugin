@@ -5,8 +5,8 @@ from __future__ import annotations
 import struct
 import unittest
 
-from avp_rif_importer.binary_reader import BinaryReader
-from avp_rif_importer.parsers._shared import read_cstr
+from avp_blender_plugin.binary_reader import BinaryReader
+from avp_blender_plugin.parsers._shared import read_cstr
 
 
 class TestScalars(unittest.TestCase):

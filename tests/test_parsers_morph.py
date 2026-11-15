@@ -15,13 +15,13 @@ from __future__ import annotations
 import struct
 import unittest
 
-from avp_rif_importer.parsers.shapes import (
+from avp_blender_plugin.parsers.shapes import (
     parse_subshphead,
     parse_shpmorph,
     SubShapeHead,
     SUBSHPHD_SIZE,
 )
-from avp_rif_importer.chunk_ids import Chunk
+from avp_blender_plugin.chunk_ids import Chunk
 
 from ._helpers import cstr, make_chunk
 
@@ -141,7 +141,7 @@ class TestMorphInScan(unittest.TestCase):
     """The scanner groups morph targets with their parent shape."""
 
     def test_scan_finds_group_with_parent_tag(self):
-        from avp_rif_importer.scan import RifScanner
+        from avp_blender_plugin.scan import RifScanner
 
         # SHPHEAD1 is 60 bytes of fixed fields plus version/count/names.
         head = (struct.pack("<i", 0) + b"\x00" * 16
@@ -160,7 +160,7 @@ class TestMorphInScan(unittest.TestCase):
         self.assertEqual(len(grp.subs), 2)
 
     def test_scan_without_morph_data(self):
-        from avp_rif_importer.scan import RifScanner
+        from avp_blender_plugin.scan import RifScanner
 
         head = (struct.pack("<i", 0) + b"\x00" * 16
                 + struct.pack("<iiif", 5, 0, 0, 1.0) + b"\x00" * 24)
@@ -174,7 +174,7 @@ class TestMorphCollectionGroup(unittest.TestCase):
     """The Morphs subcollection is registered and opt-in."""
 
     def test_group_and_optional_flag(self):
-        from avp_rif_importer.config import (
+        from avp_blender_plugin.config import (
             COLLECTION_GROUPS, OPTIONAL_COLLECTION_GROUPS,
         )
         self.assertEqual(COLLECTION_GROUPS.get("morphs"), "Morphs")
