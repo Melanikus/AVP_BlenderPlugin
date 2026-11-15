@@ -7,9 +7,10 @@ this acceptance run.
 
 ## Install the local ZIP
 
-1. Use **`avp_blender_plugin-next.zip`** (1.3.74) after its full package
+1. Use **`avp_blender_plugin-next.zip`** (1.3.75) after its full package
    gate passes. It includes the 1.3.73 ordinary UV correction and public
-   documentation cleanup. The previous proved 1.3.69 remains under
+   documentation cleanup, SHA-256 material names and confined release
+   scanner inputs. Existing material names are not renamed. The previous proved 1.3.69 remains under
    `avp_rif_importer-next.zip`; 1.3.70/1.3.71 were source-only increments.
    The older `avp_rif_importer-mvp.zip` is import-only.
    The ZIP contains

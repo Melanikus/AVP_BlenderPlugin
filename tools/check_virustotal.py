@@ -106,6 +106,7 @@ def _depth(value, level=0):
 
 
 def read_answer(path):
+    path = release_file(path)
     if not os.path.isfile(path):
         refuse("there is no saved answer to read")
     size = os.path.getsize(path)
@@ -186,6 +187,7 @@ def say_counted(found, report):
 
 
 def check_package(zip_path, sha256):
+    zip_path = release_file(zip_path)
     if not os.path.isfile(zip_path):
         refuse("the zip to send is not there")
     size = os.path.getsize(zip_path)
@@ -199,6 +201,27 @@ def check_package(zip_path, sha256):
         refuse("the zip is not the one the build made: its hash is different")
     print(f"The zip is {size} bytes and is the one the build made.")
     print("ANSWER: ready")
+
+
+def release_file(path):
+    """Resolve a file only within runner storage or this checkout's release folder."""
+    resolved = os.path.realpath(path)
+    repo = os.path.realpath(os.path.join(os.path.dirname(__file__), ".."))
+    release = os.path.realpath(os.path.join(repo, "release"))
+    roots = []
+    if os.path.commonpath((repo, release)) == repo:
+        roots.append(release)
+    temporary = os.environ.get("RUNNER_TEMP")
+    if temporary and os.path.isabs(temporary):
+        roots.append(os.path.realpath(temporary))
+    for root in roots:
+        try:
+            inside = os.path.commonpath((os.path.normcase(resolved), os.path.normcase(root))) == os.path.normcase(root)
+        except ValueError:
+            inside = False
+        if inside and os.path.normcase(resolved) != os.path.normcase(root):
+            return resolved
+    refuse("file path is outside RUNNER_TEMP and the repository release folder")
 
 
 def check_answer(path, kind, sha256, analysis_id):

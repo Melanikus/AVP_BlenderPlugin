@@ -38,6 +38,7 @@ from .utils import log
 from .parsers.bitmaps import MatchImgRule
 from .textures import (
     build_texture_index, resolve_texture, material_name, disambiguate_name,
+    MAT_NAME_MAX, _HASH_LEN,
 )
 
 
@@ -148,6 +149,19 @@ def get_material(name, png, cache, color=None,
 
     identity = tex_path or raw_name or (png or "")
     ex = bpy.data.materials.get(name)
+    # Match older hashed names by scoped source identity without renaming saved slots.
+    if image is None and png and identity and (
+            ex is None or ex.get(TEX_PATH_PROP, "") != identity or not _mat_has_image_at(ex, png)):
+        suffix = name.rsplit("_", 1)[-1]
+        prefix = (name[:-_HASH_LEN - 1] if len(name) == MAT_NAME_MAX
+                  and len(suffix) == _HASH_LEN and all(c in "0123456789abcdef" for c in suffix)
+                  else name)
+        for candidate in bpy.data.materials:
+            if (candidate.name.startswith(prefix + "_")
+                    and candidate.get(TEX_PATH_PROP, "") == identity
+                    and _mat_has_image_at(candidate, png)):
+                ex = candidate
+                break
     if ex is not None:
         ex_path = ex.get(TEX_PATH_PROP, "")
         same_texture = (ex_path == identity) if identity else True

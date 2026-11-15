@@ -12,6 +12,6 @@ version changes.
 from __future__ import annotations
 
 # PEP 396 name. Also the value reported in the import log.
-__version__ = "1.3.74"
+__version__ = "1.3.75"
 # Alias consumed by operator.py for log output.
 __version_str__ = __version__

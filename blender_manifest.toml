@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "avp_blender_plugin"
-version = "1.3.74"
+version = "1.3.75"
 name = "AVP_BlenderPlugin"
 tagline = "A fork of AdiJager's BlendRIF for AvP level editing"
 maintainer = "Melanikus"

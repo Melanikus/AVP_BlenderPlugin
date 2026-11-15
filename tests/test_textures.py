@@ -13,6 +13,7 @@ index keys are the ones the importer builds from disk (a PNG named
 from __future__ import annotations
 
 import os
+import hashlib
 import tempfile
 import unittest
 
@@ -204,6 +205,7 @@ class TestMaterialNaming(unittest.TestCase):
         self.assertLessEqual(len(name), 60)
         other = deep.replace("t.png", "u.png")
         self.assertNotEqual(name, material_name("Level", other))
+        self.assertEqual(name[-6:], hashlib.sha256(deep.lower().encode("utf-8")).hexdigest()[:6])
 
     def test_disambiguate_is_deterministic(self):
         a = disambiguate_name("X_lights", "graphics/common/lights.rim.png")
@@ -211,9 +213,63 @@ class TestMaterialNaming(unittest.TestCase):
         c = disambiguate_name("X_lights", "graphics/envrnmts/lights.rim.png")
         self.assertEqual(a, b)
         self.assertNotEqual(a, c)
+        self.assertEqual(a, "X_lights_" + hashlib.sha256(
+            b"graphics/common/lights.rim.png").hexdigest()[:6])
 
     def test_generic_dirs_constant_is_lowercase(self):
         self.assertEqual(GENERIC_DIRS, {d.lower() for d in GENERIC_DIRS})
+
+
+class TestLegacyMaterialReuse(unittest.TestCase):
+    def setUp(self):
+        import bpy
+        self.bpy = bpy
+        self.image = bpy.data.images.new("legacy-naming-test", width=1, height=1)
+        self.image.filepath = os.path.join(tempfile.gettempdir(), "legacy-naming-test.png")
+        self.materials = []
+
+    def tearDown(self):
+        for material in self.materials:
+            self.bpy.data.materials.remove(material)
+        self.bpy.data.images.remove(self.image)
+
+    def legacy(self, name, path):
+        from avp_blender_plugin.materials import TEX_PATH_PROP
+        material = self.bpy.data.materials.new(name)
+        material.use_nodes = True
+        material.node_tree.nodes.new("ShaderNodeTexImage").image = self.image
+        material[TEX_PATH_PROP] = path
+        self.materials.append(material)
+        return material
+
+    def test_old_long_name_is_reused_without_renaming(self):
+        from avp_blender_plugin.materials import get_material
+        path = "graphics/" + "/".join(f"dir{i:02d}" for i in range(12)) + "/t.png"
+        name = material_name("Legacy", path)
+        old = self.legacy(name[:-7] + "_123abc", path)
+        original = old.name
+        self.assertIs(get_material(name, self.image.filepath, {}, tex_path=path), old)
+        self.assertEqual(old.name, original)
+
+    def test_old_disambiguated_name_is_reused_only_in_its_context(self):
+        from avp_blender_plugin.materials import get_material
+        path = "graphics/common/lights.rim.png"
+        old = self.legacy("Legacy_common_lights_123abc", path)
+        self.assertIs(get_material("Legacy_common_lights", self.image.filepath, {}, tex_path=path), old)
+        other = get_material("Other_common_lights", self.image.filepath, {}, tex_path=path)
+        self.materials.append(other)
+        self.assertIsNot(other, old)
+        mismatch = get_material("Legacy_common_lights", self.image.filepath, {}, tex_path="other/path")
+        self.materials.append(mismatch)
+        self.assertIsNot(mismatch, old)
+
+    def test_memory_image_import_does_not_borrow_old_file_material(self):
+        from avp_blender_plugin.materials import get_material
+        path = "graphics/common/lights.rim.png"
+        old = self.legacy("Legacy_common_lights_123abc", path)
+        new = get_material("Legacy_common_lights", None, {}, tex_path=path, image=self.image)
+        self.materials.append(new)
+        self.assertIsNot(new, old)
 
 
 if __name__ == "__main__":

@@ -11,6 +11,7 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 for place in (os.path.join(HERE, "..", "tools"), HERE):
@@ -33,8 +34,13 @@ def run(*args):
 
 class Answers(unittest.TestCase):
     def setUp(self):
-        self.folder = tempfile.TemporaryDirectory()
-        self.path = os.path.join(self.folder.name, "answer.json")
+        self.folder = tempfile.TemporaryDirectory(dir=os.environ.get("RUNNER_TEMP"))
+        self.runner = os.path.join(self.folder.name, "runner")
+        os.mkdir(self.runner)
+        self.environment = mock.patch.dict(os.environ, {"RUNNER_TEMP": self.runner})
+        self.environment.start()
+        self.addCleanup(self.environment.stop)
+        self.path = os.path.join(self.runner, "answer.json")
 
     def tearDown(self):
         self.folder.cleanup()
@@ -178,17 +184,76 @@ class Answers(unittest.TestCase):
         self.assertRefused("has to be a SHA-256", "--answer", self.path, "--kind", "lookup", "--sha256", "XYZ")
 
     def test_package_ready_when_hash_matches(self):
-        zip_path = os.path.join(self.folder.name, "p.zip")
+        zip_path = os.path.join(self.runner, "p.zip")
         with open(zip_path, "wb") as handle:
             handle.write(b"zip bytes")
         import hashlib
         self.assertAnswer("ANSWER: ready", "--package", zip_path, "--sha256", hashlib.sha256(b"zip bytes").hexdigest())
 
     def test_package_refused_when_hash_differs(self):
-        zip_path = os.path.join(self.folder.name, "p.zip")
+        zip_path = os.path.join(self.runner, "p.zip")
         with open(zip_path, "wb") as handle:
             handle.write(b"zip bytes")
         self.assertRefused("its hash is different", "--package", zip_path, "--sha256", SHA)
+
+
+    def test_outside_and_parent_escape_refused_before_open(self):
+        outside = os.path.join(self.folder.name, "outside.json")
+        with open(outside, "w", encoding="utf-8") as handle:
+            handle.write("{}")
+        sibling = self.runner + "-sibling"
+        os.mkdir(sibling)
+        for path in (outside, os.path.join(self.runner, "..", "outside.json"),
+                     os.path.join(sibling, "answer.json")):
+            for call in (vt.read_answer, lambda p: vt.check_package(p, SHA)):
+                with self.subTest(path=path), mock.patch("builtins.open", side_effect=AssertionError("opened outside")):
+                    with self.assertRaisesRegex(vt.Refused, "outside RUNNER_TEMP"):
+                        call(path)
+
+    def test_symlink_escape_refused_before_open(self):
+        outside_folder = os.path.join(self.folder.name, "outside")
+        os.mkdir(outside_folder)
+        outside = os.path.join(outside_folder, "answer.json")
+        with open(outside, "w", encoding="utf-8") as handle:
+            handle.write("{}")
+        linked_folder = os.path.join(self.runner, "linked")
+        if os.name == "nt":
+            import _winapi
+            _winapi.CreateJunction(outside_folder, linked_folder)
+        else:
+            os.symlink(outside_folder, linked_folder, target_is_directory=True)
+        link = os.path.join(linked_folder, "answer.json")
+        for call in (vt.read_answer, lambda p: vt.check_package(p, SHA)):
+            with mock.patch("builtins.open", side_effect=AssertionError("opened link")):
+                with self.assertRaisesRegex(vt.Refused, "outside RUNNER_TEMP"):
+                    call(link)
+
+    def test_repository_release_folder_is_allowed_without_runner_temp(self):
+        checkout = os.path.join(self.folder.name, "checkout")
+        release = os.path.join(checkout, "release")
+        os.makedirs(release)
+        path = os.path.join(release, "answer.json")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("{}")
+        with mock.patch.object(vt, "__file__", os.path.join(checkout, "tools", "check_virustotal.py")), \
+                mock.patch.dict(os.environ, {"RUNNER_TEMP": ""}):
+            self.assertEqual(vt.read_answer(path), {})
+            import hashlib
+            with contextlib.redirect_stdout(io.StringIO()):
+                vt.check_package(path, hashlib.sha256(b"{}").hexdigest())
+            with self.assertRaisesRegex(vt.Refused, "outside RUNNER_TEMP"):
+                vt.read_answer(self.path)
+
+
+class WorkflowPermissions(unittest.TestCase):
+    def test_snyk_upload_has_only_required_job_permissions(self):
+        import re
+        path = os.path.join(HERE, "..", ".github", "workflows", "checks.yml")
+        with open(path, encoding="utf-8") as handle:
+            job = handle.read().split("\n  snyk-code:\n", 1)[1]
+        block = job.split("\n    permissions:\n", 1)[1].split("\n    steps:\n", 1)[0]
+        permissions = dict(re.findall(r"^      ([\w-]+): (\w+)", block, re.MULTILINE))
+        self.assertEqual(permissions, {"contents": "read", "actions": "read", "security-events": "write"})
 
 
 if __name__ == "__main__":
