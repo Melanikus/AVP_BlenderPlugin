@@ -291,6 +291,28 @@ def _items(self, context):
     return _catalogues.get(self.source_text, {}).get("items", [])
 
 
+def execute_assignment(operator, context, bitmap, source_text):
+    restore = context.mode == 'EDIT_MESH'
+    try:
+        if restore:
+            bpy.ops.object.mode_set(mode='OBJECT')
+        if (source_text and (context.object is None
+                or context.object.get("avp_blender_plugin_source_text") != source_text)):
+            raise ValueError("The selected level changed while the RIM picker was open")
+        if not isinstance(bitmap, int):
+            raise ValueError("Choose an existing level texture")
+        count = assign_texture(context, bitmap)
+    except (ValueError, RuntimeError, OSError) as error:
+        log.error("RIM assignment: %s", error)
+        _report(operator, {'ERROR'}, str(error))
+        return {'CANCELLED'}
+    finally:
+        if restore and context.mode != 'EDIT_MESH':
+            bpy.ops.object.mode_set(mode='EDIT')
+    _report(operator, {'INFO'}, f"Assigned level bitmap {bitmap} to {count} source polygon(s)")
+    return {'FINISHED'}
+
+
 class AVP_BLENDER_PLUGIN_OT_texture_picker(bpy.types.Operator):
     bl_idname = "avp_blender_plugin.pick_texture"
     bl_label = "Choose Existing RIM Texture"
@@ -319,25 +341,8 @@ class AVP_BLENDER_PLUGIN_OT_texture_picker(bpy.types.Operator):
         self.layout.label(text="Vertex and UV moves can be exported together with this pick")
 
     def execute(self, context):
-        restore = context.mode == 'EDIT_MESH'
-        try:
-            if restore:
-                bpy.ops.object.mode_set(mode='OBJECT')
-            if (self.source_text and (context.object is None
-                    or context.object.get("avp_blender_plugin_source_text") != self.source_text)):
-                raise ValueError("The selected level changed while the RIM picker was open")
-            if not self.bitmap.isdecimal():
-                raise ValueError("Choose an existing level texture")
-            count = assign_texture(context, int(self.bitmap))
-        except (ValueError, RuntimeError, OSError) as error:
-            log.error("RIM assignment: %s", error)
-            _report(self, {'ERROR'}, str(error))
-            return {'CANCELLED'}
-        finally:
-            if restore and context.mode != 'EDIT_MESH':
-                bpy.ops.object.mode_set(mode='EDIT')
-        _report(self, {'INFO'}, f"Assigned level bitmap {self.bitmap} to {count} source polygon(s)")
-        return {'FINISHED'}
+        bitmap = int(self.bitmap) if self.bitmap.isdecimal() else None
+        return execute_assignment(self, context, bitmap, self.source_text)
 
 
 class AVP_BLENDER_PLUGIN_PT_texture_picker(bpy.types.Panel):

@@ -22,9 +22,10 @@ from . import avp_lighting as _lighting
 from .avp_fields import clear_display_cache
 from .vertex_export import EXPORT_OT_avp_blender_plugin, menu_export
 from . import texture_picker as _textures
+from . import uv_texture_picker as _uv_textures
 from . import session_log as _session_log
 
-classes = _operator.classes + _panels.classes + _lighting.classes + _textures.classes + (EXPORT_OT_avp_blender_plugin,)
+classes = _operator.classes + _panels.classes + _lighting.classes + _textures.classes + _uv_textures.classes + (EXPORT_OT_avp_blender_plugin,)
 
 
 @bpy.app.handlers.persistent
@@ -33,6 +34,7 @@ def _clear_sources_after_load(*args):
     _lighting.clear_viewports()
     clear_display_cache()
     _textures.clear_previews()
+    _uv_textures.start()
 
 
 def register():
@@ -41,6 +43,10 @@ def register():
     _session_log.watch_operators(classes)
     for c in classes:
         bpy.utils.register_class(c)
+    bpy.types.Scene.avp_blender_plugin_assign_image_dropdown = bpy.props.BoolProperty(
+        name="Assign from the image drop-down", default=True,
+        description="Picking this level's RIM image in the UV header assigns it to selected whole source polygons")
+    _uv_textures.start()
     bpy.types.TOPBAR_MT_file_import.append(_operator.menu_func_import)
     bpy.types.TOPBAR_MT_file_export.append(menu_export)
     bpy.app.handlers.load_post.append(_clear_sources_after_load)
@@ -55,12 +61,14 @@ def unregister():
         except ValueError as error:
             _lighting.log.error("AvP lighting-preview cleanup: %s", error)
     _lighting.clear_viewports()
+    _uv_textures.stop()
     _textures.clear_previews()
     bpy.types.TOPBAR_MT_file_import.remove(_operator.menu_func_import)
     bpy.types.TOPBAR_MT_file_export.remove(menu_export)
     bpy.app.handlers.load_post.remove(_clear_sources_after_load)
     for c in reversed(classes):
         bpy.utils.unregister_class(c)
+    del bpy.types.Scene.avp_blender_plugin_assign_image_dropdown
     clear_display_cache()
     _session_log.stop()
 

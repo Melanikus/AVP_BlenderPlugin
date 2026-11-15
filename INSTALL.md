@@ -100,6 +100,26 @@ Object Properties shows only the applicable AvP module, door, lift, light,
 generator or generic-object panel. Audited settings have plain names and
 game-behavior tooltips; other source data remains read-only and preserved.
 
+### Assign level textures while UV mapping (alpha.1)
+
+Select an imported ordinary module mesh, enter Edit Mode, and select faces.
+In the **UV Editor**, open the **N sidebar > AvP > Level RIM Textures**.
+Click **Load Level RIM Previews** once for that level, then click a named
+thumbnail to assign it. The picker changes whole source polygons (both
+triangles of an imported quad), preserving their UV texels; it does not
+replace textures on unrelated faces.
+
+**Assign from the image drop-down** is on by default. Picking one of this
+level's RIM images in the UV header assigns it to the selected faces too.
+Other images only change the view. Turn the checkbox off to browse RIMs
+without assigning them. The sidebar is shown only for imported meshes;
+assignment is disabled with a reason outside Edit Mode or without selected
+faces. Unsupported shapes still refuse through the existing RIM picker.
+Assignments and errors are reported by Blender and written to the add-on's
+session log. Texture picks and UV moves can be exported together; new
+geometry must still be exported separately. The Object Properties picker
+remains available for existing workflows.
+
 ### Add geometry to a module (source 1.3.71)
 
 Import a fresh level with materials, select one ordinary module, enter
