@@ -77,7 +77,7 @@ lifts, lights and other placed objects.
 
 The short version:
 
-1. Download `avp_blender_plugin-1.0.0-alpha.1.zip` from the
+1. Download `avp_blender_plugin-1.0.0-alpha.2.zip` from the
    [Releases page](https://github.com/Melanikus/AVP_BlenderPlugin/releases).
    Do not unzip it.
 2. In Blender, open **Edit > Preferences...** and then the **Add-ons**
@@ -437,16 +437,16 @@ These are shown but never written to a `.rif` file:
 
 Each release page has a `SHA256SUMS` file and prints the zip's SHA-256.
 
-- On Windows PowerShell, run `Get-FileHash .\avp_blender_plugin-1.0.0-alpha.1.zip`.
+- On Windows PowerShell, run `Get-FileHash .\avp_blender_plugin-1.0.0-alpha.2.zip`.
   The hash it prints must equal the one in `SHA256SUMS`. Upper and lower case
   don't matter.
 - With the GitHub command-line tool, run
-  `gh attestation verify avp_blender_plugin-1.0.0-alpha.1.zip --repo Melanikus/AVP_BlenderPlugin`.
+  `gh attestation verify avp_blender_plugin-1.0.0-alpha.2.zip --repo Melanikus/AVP_BlenderPlugin`.
   It checks that the file is the one the release run built.
 - The release page links the zip's VirusTotal report.
 
 Each release is checked by Snyk Code (a code scanner) and by VirusTotal before
-it is published. Install only the file named `avp_blender_plugin-1.0.0-alpha.1.zip`.
+it is published. Install only the file named `avp_blender_plugin-1.0.0-alpha.2.zip`.
 The source-code archives that GitHub adds to every release are not the
 release package.
 
