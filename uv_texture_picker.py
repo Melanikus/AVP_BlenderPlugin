@@ -6,12 +6,34 @@ import bmesh
 import bpy
 
 from .avp_fields import classify, object_source
+from .geometry import TILED_FACE_ATTRIBUTE
 from .session_log import report as _report
+from .session_log import write as _write_log
 from .texture_picker import _catalogues, catalogue, execute_assignment
 from .utils import log
 
 _subscription_owner = object()
 _editor_images = {}
+
+
+def repeat_for_selection(context):
+    space = context.space_data
+    if (space is None or space.type != 'IMAGE_EDITOR' or space.mode != 'UV'
+            or space.show_repeat or context.mode != 'EDIT_MESH'
+            or not context.scene.avp_blender_plugin_auto_repeat_image):
+        return False
+    for obj in context.objects_in_mode_unique_data:
+        if obj.type != 'MESH' or not obj.get("avp_blender_plugin_source_text"):
+            continue
+        mesh = bmesh.from_edit_mesh(obj.data)
+        tiled = mesh.faces.layers.int.get(TILED_FACE_ATTRIBUTE)
+        if tiled is not None and any(face.select and not face.hide and face[tiled] for face in mesh.faces):
+            space.show_repeat = True
+            message = f"UV Repeat Image enabled for selected tiled faces on {obj.name}"
+            log.info(message)
+            _write_log("INFO", message)
+            return True
+    return False
 
 
 def assignment_reason(context):
@@ -43,6 +65,10 @@ def _remember_editors():
     for window, area, space in _uv_editors():
         key = space.as_pointer()
         current[key] = _editor_images.get(key, space.image.as_pointer() if space.image else 0)
+        region = next((region for region in area.regions if region.type == 'WINDOW'), None)
+        if region is not None:
+            with bpy.context.temp_override(window=window, area=area, region=region):
+                repeat_for_selection(bpy.context)
     _editor_images.clear()
     _editor_images.update(current)
     return 0.5
@@ -168,6 +194,7 @@ class AVP_BLENDER_PLUGIN_PT_uv_textures(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         layout.prop(context.scene, "avp_blender_plugin_assign_image_dropdown")
+        layout.prop(context.scene, "avp_blender_plugin_auto_repeat_image")
         source = context.object.get("avp_blender_plugin_source_text")
         choices = _catalogues.get(source)
         if choices is None:

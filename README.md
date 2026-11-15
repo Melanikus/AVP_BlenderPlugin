@@ -110,6 +110,9 @@ add-on.
    drop-down also assigns this level's RIMs unless **Assign from the image
    drop-down** is off; other images only change the view. The Object Properties
    **Choose Existing RIM Texture** picker remains available.
+   - **Auto Repeat Image for tiled faces** is on by default in the UV sidebar.
+     Selected imported UVs outside 0..1 enable that editor's Repeat Image;
+     it never turns it off. The per-face tiling attribute survives blend saves.
    - You should see **Assigned level bitmap `<number>` to `<count>` source
      polygon(s)**, and the faces show the new texture.
 4. Export. Click **Export level (geometry / textures)** at the bottom of

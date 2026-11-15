@@ -46,6 +46,9 @@ def register():
     bpy.types.Scene.avp_blender_plugin_assign_image_dropdown = bpy.props.BoolProperty(
         name="Assign from the image drop-down", default=True,
         description="Picking this level's RIM image in the UV header assigns it to selected whole source polygons")
+    bpy.types.Scene.avp_blender_plugin_auto_repeat_image = bpy.props.BoolProperty(
+        name="Auto Repeat Image for tiled faces", default=True,
+        description="Enable UV Repeat Image for selected imported polygons whose UVs extend outside 0..1; never disable it")
     _uv_textures.start()
     bpy.types.TOPBAR_MT_file_import.append(_operator.menu_func_import)
     bpy.types.TOPBAR_MT_file_export.append(menu_export)
@@ -69,6 +72,7 @@ def unregister():
     for c in reversed(classes):
         bpy.utils.unregister_class(c)
     del bpy.types.Scene.avp_blender_plugin_assign_image_dropdown
+    del bpy.types.Scene.avp_blender_plugin_auto_repeat_image
     clear_display_cache()
     _session_log.stop()
 

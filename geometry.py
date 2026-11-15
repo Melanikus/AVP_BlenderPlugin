@@ -44,6 +44,7 @@ _STRUCT_I    = struct.Struct("<i")
 # Fallback texture size when the bitmap cannot be resolved to a file. The
 # retail levels use 128x128 level textures almost exclusively.
 DEFAULT_TEX_SIZE = 128.0
+TILED_FACE_ATTRIBUTE = "avp_blender_plugin_tiled"
 
 # PNG dimensions, keyed by absolute path; the same file is queried once
 # per build_mesh call for every polygon that uses it.
@@ -215,7 +216,7 @@ def build_mesh(shape: ShapeGroup, base, name, scale, bitmaps, tex_index,
     new_verts = [transform(v) for v in verts] if transform else \
                 [(float(v[0]), float(v[1]), float(v[2])) for v in verts]
 
-    faces, fmat, fuv, uv_mapping = [], [], [], []
+    faces, fmat, fuv, ftiled, uv_mapping = [], [], [], [], []
     mat_lookup, mat_names, mat_objs = {}, [], []
 
     for poly in polys:
@@ -307,6 +308,7 @@ def build_mesh(shape: ShapeGroup, base, name, scale, bitmaps, tex_index,
         tex_w = float(dims[0]) if dims else DEFAULT_TEX_SIZE
         tex_h = float(dims[1]) if dims else DEFAULT_TEX_SIZE
         puv = [uv_to_blender(int(u), int(v), tex_w, tex_h) for (u, v) in puv_raw]
+        tiled = int(any(u < 0.0 or u > 1.0 or v < 0.0 or v > 1.0 for u, v in puv))
         def map_corners(corners):
             for corner in corners:
                 uv_mapping.extend((poly["poly_idx"], uv_idx if puv else -1,
@@ -317,6 +319,7 @@ def build_mesh(shape: ShapeGroup, base, name, scale, bitmaps, tex_index,
             faces.append((v[0], v[1], v[2]))
             fmat.append(slot)
             fuv.append(puv[:3] if len(puv) >= 3 else [])
+            ftiled.append(tiled)
             map_corners((0, 1, 2))
         elif poly["num_verts"] == 4:
             faces.append((v[0], v[1], v[2]))
@@ -328,6 +331,7 @@ def build_mesh(shape: ShapeGroup, base, name, scale, bitmaps, tex_index,
             fuv.append([puv[0], puv[2], puv[3]] if len(puv) >= 4 else
                        (puv[:3] if len(puv) >= 3 else []))
             map_corners((0, 1, 2, 0, 2, 3))
+            ftiled.extend((tiled, tiled))
 
     if not faces:
         return None
@@ -360,6 +364,7 @@ def build_mesh(shape: ShapeGroup, base, name, scale, bitmaps, tex_index,
             else:
                 ext((0.0, 0.0, 0.0, 0.0, 0.0, 0.0))
         uv_layer.data.foreach_set("uv", flat_uvs)
+        mesh.attributes.new(TILED_FACE_ATTRIBUTE, 'INT', 'FACE').data.foreach_set("value", ftiled)
         mesh["avp_blender_plugin_uv_mapping"] = uv_mapping
 
     # Optional pivot centering: move the geometry's center to the object origin.

@@ -28,7 +28,7 @@ addon.register()
 
 from avp_blender_plugin import session_log, uv_texture_picker as picker
 from avp_blender_plugin.avp_fields import classify
-from avp_blender_plugin.geometry import extract_polygons
+from avp_blender_plugin.geometry import TILED_FACE_ATTRIBUTE, extract_polygons, extract_uvs
 from avp_blender_plugin.raw_rif import source_from_text, walk_tree
 from avp_blender_plugin.rif_loader import load_rif_auto
 from avp_blender_plugin.texture_picker import catalogue
@@ -135,6 +135,8 @@ class UVTextureProof(unittest.TestCase):
         restore = bpy.context.mode == 'EDIT_MESH'
         if restore:
             bpy.ops.object.mode_set(mode='OBJECT')
+
+
         try:
             return export_bytes(bpy.context.scene, self.text)
         finally:
@@ -270,6 +272,117 @@ class UVTextureProof(unittest.TestCase):
         self.assertEqual(self.exported_bytes(), wanted)
 
 
+class UVRepeatProof(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        if bpy.context.mode == 'EDIT_MESH':
+            bpy.ops.object.mode_set(mode='OBJECT')
+        before = set(bpy.data.texts)
+        cls.input = DATA / "avp_rifs" / "Derelict.RIF"
+        assert bpy.ops.import_scene.avp_blender_plugin(
+            filepath=str(cls.input), game_data=str(DATA)) == {'FINISHED'}
+        cls.text = next(iter(set(bpy.data.texts) - before))
+        raw, tree, record = source_from_text(cls.text)
+        nodes = {node.offset: node for node in walk_tree(tree)}
+        choices = catalogue(cls.text)
+        grille = {image for bitmap, image in choices["images"].items()
+                  if any(int(item[0]) == bitmap and "gril" in item[1].lower()
+                         for item in choices["items"])}
+        cls.obj = cls.inside_obj = None
+        for obj in bpy.context.scene.objects:
+            if obj.type != 'MESH' or obj.get("avp_blender_plugin_source_text") != cls.text.name:
+                continue
+            flags = obj.data.attributes[TILED_FACE_ATTRIBUTE]
+            layer = obj.data.uv_layers[0]
+            for face in obj.data.polygons:
+                uvs = [layer.data[loop].uv for loop in face.loop_indices]
+                material = obj.data.materials[face.material_index]
+                images = {node.image for node in material.node_tree.nodes if node.type == 'TEX_IMAGE'}
+                if cls.inside_obj is None and images and not flags.data[face.index].value:
+                    assert all(0.0 <= value <= 1.0 for uv in uvs for value in uv)
+                    cls.inside_obj, cls.inside_face = obj, face.index
+                heights = [obj.data.vertices[index].co.z for index in face.vertices]
+                if (cls.obj is None and flags.data[face.index].value and images & grille
+                        and max(heights) - min(heights) < 0.0001):
+                    image = next(iter(images & grille))
+                    if tuple(image.size) != (128, 128):
+                        continue
+                    shape = nodes[obj["avp_blender_plugin_shape_chunk_offset"]]
+                    uv_node = next(n for n in shape.children if n.identifier == b"SHPUVCRD")
+                    mapping = record["placements"][str(obj["avp_blender_plugin_object_chunk_offset"])]["uv_mapping"]
+                    source_uvs = extract_uvs(raw[uv_node.offset + 12:uv_node.offset + uv_node.size])
+                    coords = source_uvs[mapping[face.loop_start * 5 + 1]]
+                    if min(value for uv in coords for value in uv) != 0 or max(value for uv in coords for value in uv) != 255:
+                        continue
+                    assert any(value > 1.0 or value < 0.0 for uv in uvs for value in uv)
+                    cls.obj, cls.face = obj, face.index
+        assert cls.obj is not None, "No Derelict horizontal grille face with 0..255 texels on a 128x128 RIM"
+        assert cls.inside_obj is not None, "No real textured Derelict face wholly inside 0..1"
+        cls.area = next(area for area in bpy.context.screen.areas
+                        if area.type == 'IMAGE_EDITOR' and area.spaces.active.mode == 'UV')
+        cls.space = cls.area.spaces.active
+        print(f"DERELICT TILING FIXTURE: {cls.obj.name} face {cls.face}; grille 128x128; source texels 0..255", flush=True)
+
+    def select(self, obj, index):
+        if bpy.context.mode == 'EDIT_MESH':
+            bpy.ops.object.mode_set(mode='OBJECT')
+        for selected in bpy.context.selected_objects:
+            selected.select_set(False)
+        obj.select_set(True)
+        bpy.context.view_layer.objects.active = obj
+        for vertex in obj.data.vertices:
+            vertex.select = False
+        for edge in obj.data.edges:
+            edge.select = False
+        for face in obj.data.polygons:
+            face.select = face.index == index
+        bpy.context.tool_settings.mesh_select_mode = (False, False, True)
+        bpy.ops.object.mode_set(mode='EDIT')
+
+    def setUp(self):
+        bpy.context.scene.avp_blender_plugin_auto_repeat_image = True
+        self.select(self.obj, self.face)
+        self.space.show_repeat = False
+
+    def tick(self):
+        picker._remember_editors()
+
+    def test_derelict_grille_enables_repeat_through_timer(self):
+        self.tick()
+        self.assertTrue(self.space.show_repeat)
+        self.assertIn(f"UV Repeat Image enabled for selected tiled faces on {self.obj.name}",
+                      Path(session_log.path()).read_text(encoding="utf-8"))
+
+    def test_inside_face_does_not_enable_or_disable_manual_repeat(self):
+        self.select(self.inside_obj, self.inside_face)
+        self.tick()
+        self.assertFalse(self.space.show_repeat)
+        self.space.show_repeat = True
+        self.tick()
+        self.assertTrue(self.space.show_repeat)
+
+    def test_checkbox_off_leaves_repeat_alone(self):
+        bpy.context.scene.avp_blender_plugin_auto_repeat_image = False
+        self.tick()
+        self.assertFalse(self.space.show_repeat)
+        self.space.show_repeat = True
+        self.tick()
+        self.assertTrue(self.space.show_repeat)
+
+    def test_z_tiling_attribute_survives_blend_reopen_and_export_is_unchanged(self):
+        bpy.ops.object.mode_set(mode='OBJECT')
+        self.assertEqual(export_bytes(bpy.context.scene, self.text), self.input.read_bytes())
+        name, source, index = self.obj.name, self.text.name, self.face
+        flags = [entry.value for entry in self.obj.data.attributes[TILED_FACE_ATTRIBUTE].data]
+        path = PROOF / "uv-repeat-persistence.blend"
+        self.assertEqual(bpy.ops.wm.save_as_mainfile(filepath=str(path)), {'FINISHED'})
+        self.assertEqual(bpy.ops.wm.open_mainfile(filepath=str(path)), {'FINISHED'})
+        obj = bpy.data.objects[name]
+        self.assertEqual([entry.value for entry in obj.data.attributes[TILED_FACE_ATTRIBUTE].data], flags)
+        self.assertEqual(obj.data.attributes[TILED_FACE_ATTRIBUTE].data[index].value, 1)
+        self.assertEqual(export_bytes(bpy.context.scene, bpy.data.texts[source]), self.input.read_bytes())
+
+
 try:
     if "--manual" in args:
         UVTextureProof.setUpClass()
@@ -292,7 +405,8 @@ try:
                 print(line, flush=True)
     else:
         result = unittest.TextTestRunner(verbosity=2).run(
-            unittest.defaultTestLoader.loadTestsFromTestCase(UVTextureProof))
+            unittest.TestSuite((unittest.defaultTestLoader.loadTestsFromTestCase(UVTextureProof),
+                                unittest.defaultTestLoader.loadTestsFromTestCase(UVRepeatProof))))
         if not result.wasSuccessful():
             raise AssertionError("UV texture focused tests failed")
         print("UV TEXTURE FOCUSED PASS; session log:", session_log.path(), flush=True)

@@ -483,6 +483,15 @@ Click **Load Level RIM Previews** once for that level, then click a named
 thumbnail. Assignment changes whole source polygons (both triangles of an
 imported quad), preserving their UV texels and leaving unrelated faces alone.
 
+**Auto Repeat Image for tiled faces** is on by default in the same sidebar.
+Selecting imported tiled faces in Edit Mode enables that UV editor's
+**Repeat Image** within half a second. It never switches Repeat Image off;
+disable the checkbox to leave that setting entirely under your control.
+There is no separate tiling polygon flag: the saved per-face attribute marks
+source polygons whose imported UVs extend outside the image's 0..1 square.
+Re-import older meshes to obtain this attribute. It survives saving/reopening
+the blend and changes no RIF bytes.
+
 **Assign from the image drop-down** is on by default. Picking one of this
 level's RIM images in the UV header assigns it to the selected faces too.
 Other images only change the view. Turn the checkbox off to browse RIMs
