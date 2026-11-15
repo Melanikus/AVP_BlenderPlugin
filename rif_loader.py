@@ -33,6 +33,21 @@ from .utils import log
 from .config import RIF_ALIASES
 
 
+MAX_RIF_FILE = 32 * 1024 * 1024
+
+
+def read_rif_file(path: str) -> bytes:
+    """Read a RIF file of at most MAX_RIF_FILE bytes. A bigger one is refused before it is read into memory, naming the file."""
+    too_big = f"RIF file is bigger than the {MAX_RIF_FILE // (1024 * 1024)} MiB limit: {path}"
+    if os.path.getsize(path) > MAX_RIF_FILE:
+        raise ValueError(too_big)
+    with open(path, 'rb') as f:
+        raw = f.read(MAX_RIF_FILE + 1)   # a file that grew since the size check is still cut off here
+    if len(raw) > MAX_RIF_FILE:
+        raise ValueError(too_big)
+    return raw
+
+
 def load_rif_auto(raw: bytes, verbose: bool = False) -> bytes | None:
     """Decompress a RIF buffer; returns the decoded chunk stream or None."""
     if not 12 <= len(raw) <= 32 * 1024 * 1024:
@@ -140,13 +155,27 @@ def load_ext_rif(name: str, rif_index: dict, cache: dict,
         return None, f"external RIF not found: {name}{extra}"
 
     try:
-        with open(path, 'rb') as f:
-            raw = f.read()
+        raw = read_rif_file(path)
+    except ValueError as e:
+        cache[key] = None
+        return None, str(e)
     except OSError as e:
         cache[key] = None
         return None, f"cannot read external RIF {path}: {e}"
 
-    dec = load_rif_auto(raw)
+    # A shape file gets the same strict checks as a level: the size and decoding limits of load_rif_auto, a chunk
+    # tree that fits inside its parents, and the shape checks (extents, radius, names). A file that fails any of
+    # them is refused, so the level's own stand-in shape is used and the reason is reported.
+    try:
+        dec = load_rif_auto(raw)
+        if dec is not None:
+            from .raw_rif import read_tree
+            from .level_validation import read_level
+            read_tree(dec)
+            read_level(dec)
+    except ValueError as e:
+        cache[key] = None
+        return None, f"external RIF refused: {path}: {e}"
     if dec is None:
         cache[key] = None
         return None, f"unrecognized format in {path}"

@@ -330,21 +330,31 @@ class IMPORT_OT_avp_blender_plugin(bpy.types.Operator):
             raise ValueError(f"{os.path.basename(self.filepath)}: import did not complete")
         except (ValueError, RuntimeError, OSError, struct.error) as e:
             log.exception(f"Import failed: {type(e).__name__}: {e}")
-            for name, previous in before.items():
-                datablocks = getattr(bpy.data, name)
-                for block in set(datablocks) - previous:
-                    datablocks.remove(block, do_unlink=True)
-            if saved_sources is None:
-                if SOURCE_PROPERTY in context.scene:
-                    del context.scene[SOURCE_PROPERTY]
-            else:
-                context.scene[SOURCE_PROPERTY] = saved_sources
-            if context.scene.render.fps != saved_fps:
-                context.scene.render.fps = saved_fps
-                log.info(f"Restored scene FPS to {saved_fps} "
-                         f"(import did not complete)")
+            self._roll_back(context, before, saved_sources, saved_fps)
             _report(self, {'ERROR'}, f"{os.path.basename(self.filepath)}: {type(e).__name__}: {e}")
             return {'CANCELLED'}
+        except BaseException as e:
+            # Anything else (a bug, running out of memory, the user interrupting) must not leave a half-made import behind
+            # either. Roll back, write it to the log, and let it go on up so Blender shows it.
+            log.exception(f"Import failed with an unexpected {type(e).__name__}: {e}")
+            self._roll_back(context, before, saved_sources, saved_fps)
+            raise
+
+    def _roll_back(self, context, before, saved_sources, saved_fps):
+        """Remove everything the import made and put back the scene settings it changed."""
+        for name, previous in before.items():
+            datablocks = getattr(bpy.data, name)
+            for block in set(datablocks) - previous:
+                datablocks.remove(block, do_unlink=True)
+        if saved_sources is None:
+            if SOURCE_PROPERTY in context.scene:
+                del context.scene[SOURCE_PROPERTY]
+        else:
+            context.scene[SOURCE_PROPERTY] = saved_sources
+        if context.scene.render.fps != saved_fps:
+            context.scene.render.fps = saved_fps
+            log.info(f"Restored scene FPS to {saved_fps} "
+                     f"(import did not complete)")
 
     def _run_pipeline(self, context, saved_fps):
         """Pipeline body, wrapped by execute() so it can roll back FPS."""

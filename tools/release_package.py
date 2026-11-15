@@ -12,6 +12,10 @@ PRIVATE_MARKERS = (
     b"AvP" + b"-builds-excluded",
     b"sol" + b"-blender-test",
     b"BlendRIF" + b"-work",
+    b"AvP" + b"-run",
+    # A user folder on any drive (a drive letter, a colon, then the Users folder) names a person's computer
+    b":" + b"\\" + b"Users" + b"\\",
+    b":" + b"/" + b"Users" + b"/",
 )
 
 
