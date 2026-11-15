@@ -383,14 +383,14 @@ def material_name(base: str, texture_path: str, fallback: str = "") -> str:
     clean = _UNSAFE.sub("_", suffix.replace(" ", "_")).strip("_")
     name = f"{base}_{clean}" if clean else f"{base}_texture"
     if len(name) > MAT_NAME_MAX:
-        digest = hashlib.sha1(rel.encode("utf-8")).hexdigest()[:_HASH_LEN]
+        digest = hashlib.sha256(rel.encode("utf-8")).hexdigest()[:_HASH_LEN]
         name = f"{name[:MAT_NAME_MAX - _HASH_LEN - 1]}_{digest}"
     return name
 
 
 def disambiguate_name(name: str, texture_path: str) -> str:
-    """Append a short path hash so two textures never share a name."""
-    digest = hashlib.sha1(texture_path.replace('\\', '/').lower()
+    """Append a stable short path hash to distinguish display names."""
+    digest = hashlib.sha256(texture_path.replace('\\', '/').lower()
                           .encode("utf-8")).hexdigest()[:_HASH_LEN]
     return f"{name}_{digest}"
 

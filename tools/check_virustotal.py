@@ -13,10 +13,10 @@ uses is checked for its type and its range, and VirusTotal's hash of the file ha
 is an analysis's number, on its ANSWER: line, and only once it has been checked to be letters, digits, + / and =.
 
 What it checks, by what it is given:
-  --package ZIP --sha256 HASH                     the zip is the one the build made, and small enough to upload in one go
-  --answer FILE --kind lookup --sha256 HASH       the answer to GET /api/v3/files/HASH
-  --answer FILE --kind upload --sha256 HASH       the answer to POST /api/v3/files: the analysis it started
-  --answer FILE --kind analysis --sha256 HASH --analysis-id ID
+  --package NAME --sha256 HASH                    the release zip is the one the build made, and small enough to upload
+  --answer --kind lookup --sha256 HASH            the fixed saved answer to GET /api/v3/files/HASH
+  --answer --kind upload --sha256 HASH            the fixed saved answer to POST /api/v3/files
+  --answer --kind analysis --sha256 HASH --analysis-id ID
                                                   the answer to GET /api/v3/analyses/ID
 What it prints: lines for a person, then one line for the scan job, made only of what has been checked:
   ANSWER: ready                       the zip may be sent
@@ -60,6 +60,8 @@ COUNTS_KNOWN = COUNTS_THAT_ARE_ANSWERS + ("timeout", "confirmed-timeout", "failu
 
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 ANALYSIS_ID = re.compile(r"[A-Za-z0-9+/=]{1,200}\Z")
+PACKAGE_NAME = re.compile(r"avp_blender_plugin-[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.zip\Z")
+RELEASE_FOLDER = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "release")
 
 
 class Refused(Exception):
@@ -105,7 +107,8 @@ def _depth(value, level=0):
             _depth(part, level + 1)
 
 
-def read_answer(path):
+def read_answer(folder=RELEASE_FOLDER):
+    path = release_file("vt-answer.json", folder)
     if not os.path.isfile(path):
         refuse("there is no saved answer to read")
     size = os.path.getsize(path)
@@ -185,7 +188,10 @@ def say_counted(found, report):
     print(f"ANSWER: counted {found['malicious']} {found['suspicious']} {total}")
 
 
-def check_package(zip_path, sha256):
+def check_package(name, sha256, folder=RELEASE_FOLDER):
+    if not isinstance(name, str) or not PACKAGE_NAME.fullmatch(name):
+        refuse("package name must be avp_blender_plugin-MAJOR.MINOR.PATCH.zip, with no path")
+    zip_path = release_file(os.path.basename(name), folder)
     if not os.path.isfile(zip_path):
         refuse("the zip to send is not there")
     size = os.path.getsize(zip_path)
@@ -201,9 +207,22 @@ def check_package(zip_path, sha256):
     print("ANSWER: ready")
 
 
-def check_answer(path, kind, sha256, analysis_id):
+def release_file(name, folder):
+    """Reject links escaping the fixed release folder (or an explicit test folder)."""
+    root = os.path.realpath(folder)
+    resolved = os.path.realpath(os.path.join(folder, name))
+    try:
+        inside = os.path.commonpath((os.path.normcase(resolved), os.path.normcase(root))) == os.path.normcase(root)
+    except ValueError:
+        inside = False
+    if not inside or os.path.normcase(resolved) == os.path.normcase(root):
+        refuse("saved file link escapes the release folder")
+    return resolved
+
+
+def check_answer(kind, sha256, analysis_id, folder=RELEASE_FOLDER):
     report = f"https://www.virustotal.com/gui/file/{sha256}"
-    root = read_answer(path)
+    root = read_answer(folder)
     data = part(root, "data", "")
 
     if kind == "lookup":
@@ -266,10 +285,10 @@ def check_answer(path, kind, sha256, analysis_id):
     say_counted(found, report)
 
 
-def main(argv):
+def main(argv, folder=RELEASE_FOLDER):
     parser = argparse.ArgumentParser(description="Check a VirusTotal answer, or the zip before it's sent.")
     parser.add_argument("--package")
-    parser.add_argument("--answer")
+    parser.add_argument("--answer", action="store_true")
     parser.add_argument("--kind", choices=("lookup", "upload", "analysis"))
     parser.add_argument("--sha256", required=True)
     parser.add_argument("--analysis-id")
@@ -281,13 +300,13 @@ def main(argv):
         if options.package:
             if options.answer or options.kind or options.analysis_id:
                 refuse("--package is checked on its own, with only --sha256")
-            check_package(options.package, options.sha256)
+            check_package(options.package, options.sha256, folder)
             return 0
-        if options.kind is None or options.answer is None:
+        if options.kind is None or not options.answer:
             refuse("an answer needs --answer and --kind")
         if options.kind == "analysis" and not (options.analysis_id and ANALYSIS_ID.match(options.analysis_id)):
             refuse("an analysis is checked against the number the upload gave, and that's missing or isn't one")
-        check_answer(options.answer, options.kind, options.sha256, options.analysis_id)
+        check_answer(options.kind, options.sha256, options.analysis_id, folder)
         return 0
     except Refused as why:
         print(f"REFUSED: {why}")

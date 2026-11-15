@@ -160,6 +160,7 @@ jobs:
     runs-on: ubuntu-24.04   # pinned, as above
     permissions:
       contents: read
+      actions: read
       security-events: write   # to upload the results to code scanning
     steps:
       - name: Check out the repository
