@@ -105,9 +105,11 @@ add-on.
    Properties editor. Its AvP panel shows what the level stores for it. A
    level module shows the panel **AvP Module**.
 3. Make an edit. Select a module, switch to Edit Mode and select a few
-   faces. In the panel **AvP Existing RIM Textures**, click
-   **Choose Existing RIM Texture**. Pick one of the level's textures and
-   confirm. (RIM is the game's texture format.)
+   faces. In **UV Editor > N sidebar > AvP > Level RIM Textures**, click
+   **Load Level RIM Previews**, then a named thumbnail. The UV header's image
+   drop-down also assigns this level's RIMs unless **Assign from the image
+   drop-down** is off; other images only change the view. The Object Properties
+   **Choose Existing RIM Texture** picker remains available.
    - You should see **Assigned level bitmap `<number>` to `<count>` source
      polygon(s)**, and the faces show the new texture.
 4. Export. Click **Export level (geometry / textures)** at the bottom of
@@ -378,7 +380,8 @@ These are shown but never written to a `.rif` file:
   spread evenly over each sequence.
 - Morph targets (legacy import only) are separate meshes, not shape keys.
 - There is no tab in the 3D View sidebar and there are no add-on preferences.
-  All options are in the import file browser and the Properties editor.
+  Options are in the import file browser, Properties editor and UV Editor's
+  **AvP** sidebar. World-tab AvP panels use the active imported object.
 - `.blend` files made with older versions must be re-imported. See
   [INSTALL.md](INSTALL.md#older-blend-files).
 - A saved `.blend` file holds a copy of the level, the packed textures, and

@@ -18,7 +18,7 @@ import bpy
 sys.dont_write_bytecode = True
 args = sys.argv[sys.argv.index("--") + 1:]
 DATA, PROOF = map(Path, args[:2])
-WORK = Path(__file__).resolve().parents[1]
+WORK = Path(globals().get("addon_folder", Path(__file__).resolve().parents[1]))
 spec = importlib.util.spec_from_file_location("avp_blender_plugin", WORK / "__init__.py",
                                             submodule_search_locations=[str(WORK)])
 addon = importlib.util.module_from_spec(spec)

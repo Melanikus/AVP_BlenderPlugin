@@ -335,7 +335,7 @@ class AVP_BLENDER_PLUGIN_OT_build_lighting_preview(bpy.types.Operator):
 
     def execute(self, context):
         try:
-            text, _, _, _ = object_source(context.object)
+            text, _, _, _ = object_source(context.active_object)
             count = build_preview(context, text, self.strength)
         except (ValueError, RuntimeError) as error:
             log.error("AvP lighting preview: %s", error)

@@ -35,4 +35,4 @@ paths_exclude_pattern = [
 ]
 
 [permissions]
-files = "Read RIF assets and game textures; write RIF exports to the chosen file"
+files = "Read game assets and textures; write chosen RIF exports"

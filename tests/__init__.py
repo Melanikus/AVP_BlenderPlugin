@@ -4,7 +4,7 @@ How to run (from Blender's Python console, because importing avp_blender_plugin
 triggers `import bpy` through the package __init__):
 
     import sys
-    sys.path.insert(0, r"C:\\Users\\aschw\\AppData\\Roaming\\Blender Foundation\\Blender\\5.2\\scripts\\addons")
+    sys.path.insert(0, r"<ADDONS_DIRECTORY>")
     from avp_blender_plugin.tests import run_all
     run_all()
 

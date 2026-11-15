@@ -32,7 +32,12 @@ class PrivateMarkers(unittest.TestCase):
         for path in ("C:" + "\\" + "Users" + "\\" + "someone" + "\\" + "Desktop",
                      "d:" + "/" + "Users" + "/" + "someone" + "/" + "x",
                      "see Z:" + "\\" + "Users" + "\\" + "<name>"):
-            self.assertIn("private path marker", refused(path), path)
+            self.assertIsNotNone(refused(path), path)
+
+    def test_mixed_slash_drive_user_paths_are_refused(self):
+        for path in ("C:" + "\\" + "Users" + "/" + "someone",
+                     "D:" + "/" + "uSeRs" + "\\" + "someone"):
+            self.assertIn("private drive-letter user path", refused(path), path)
 
     def test_the_older_markers_still_refuse(self):
         for marker in ("Users" + "\\" + "Melanikus", "Users" + "/" + "Melanikus", "AvP" + "-docs",

@@ -1345,7 +1345,7 @@ class AVP_BLENDER_PLUGIN_PT_environment(bpy.types.Panel):
 
     @classmethod
     def poll(cls, context):
-        obj = context.object
+        obj = context.active_object
         if obj is None or not obj.get("avp_blender_plugin_source_text"):
             return False
         try:
@@ -1357,13 +1357,13 @@ class AVP_BLENDER_PLUGIN_PT_environment(bpy.types.Panel):
 
     def draw(self, context):
         try:
-            text, _, _, _ = object_source(context.object, display=True)
+            text, _, _, _ = object_source(context.active_object, display=True)
             self.layout.label(text=f"Source of selected object: {text.name}", icon='INFO')
             log_path = session_log.path()
             if log_path:
                 self.layout.label(text=f"Log of this session: {os.path.basename(log_path)}", icon='TEXT')
                 self.layout.label(text=f"In: {os.path.dirname(log_path)}")
-            settings = environment_info(context.object, display=True)
+            settings = environment_info(context.active_object, display=True)
             if settings is None:
                 self.layout.label(text="No AVPENVIR: runtime creates defaults, not a stored source record", icon='INFO')
                 sky, flags, spears = (200, 200, 200), 0x17, 30
@@ -1388,7 +1388,7 @@ class AVP_BLENDER_PLUGIN_PT_environment(bpy.types.Panel):
             log.error("AvP level-settings panel: %s", error)
             self.layout.label(text=str(error), icon='ERROR')
         try:
-            acoustics = environment_acoustics_info(context.object, display=True)
+            acoustics = environment_acoustics_info(context.active_object, display=True)
             box = self.layout.box()
             box.label(text="Stored environment acoustics (read only)", icon='INFO')
             if acoustics is None:
@@ -1419,9 +1419,9 @@ class AVP_BLENDER_PLUGIN_PT_decals(bpy.types.Panel):
 
     def draw(self, context):
         try:
-            text, _, _, _ = object_source(context.object, display=True)
+            text, _, _, _ = object_source(context.active_object, display=True)
             self.layout.label(text=f"Source of selected object: {text.name}", icon='INFO')
-            decals = decal_info(context.object, display=True)
+            decals = decal_info(context.active_object, display=True)
             if decals is None:
                 self.layout.label(text="No AVPDECAL in source SPECLOBJ", icon='INFO')
             else:
@@ -1462,9 +1462,9 @@ class AVP_BLENDER_PLUGIN_PT_lighting_sets(bpy.types.Panel):
 
     def draw(self, context):
         try:
-            text, _, _, _ = object_source(context.object, display=True)
+            text, _, _, _ = object_source(context.active_object, display=True)
             self.layout.label(text=f"Source of selected object: {text.name}", icon='INFO')
-            count, entries = lighting_sets_info(context.object, display=True)
+            count, entries = lighting_sets_info(context.active_object, display=True)
             self.layout.label(text=f"Showing first {len(entries)} of {count} source lighting sets")
             for index, (header, ambient, scale_count, scales) in enumerate(entries):
                 box = self.layout.box()
