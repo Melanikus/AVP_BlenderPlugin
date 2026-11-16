@@ -45,7 +45,7 @@ def _mapping_after_picks(obj):
     return mapping
 
 
-def refresh_after_export(text, data, objects):
+def refresh_after_export(text, data, objects, light_plan=None):
     """Make `data` (the bytes just saved) the source of `text`, and re-take the snapshot of each module in `objects`."""
     if not 12 <= len(data) <= MAX_RIF_BYTES:
         raise ValueError("The saved file's size is outside what a source can hold")
@@ -67,11 +67,25 @@ def refresh_after_export(text, data, objects):
     record["raw"] = [encoded[i:i + 256] for i in range(0, len(encoded), 256)]
     record["sha256"] = hashlib.sha256(data).hexdigest()
     record.pop("compressed_file", None)   # the saved file is the decoded bytes, so the old compressed original no longer describes it
+    if light_plan is not None and light_plan.positions:
+        from .light_export import align_positions
+        align_positions(light_plan.positions)
+        for obj in light_plan.positions:
+            if obj.type != 'MESH':
+                obj["avp_blender_plugin_light_matrix"] = [value for row in obj.matrix_world for value in row]
+        for obj in light_plan.moved_meshes:
+            placements[str(obj["avp_blender_plugin_object_chunk_offset"])]["matrix"] = [
+                value for row in obj.matrix_world for value in row]
     for obj, mapping in mappings.items():
         obj.data[_MAPPING] = mapping
         if _PICKS in obj:
             del obj[_PICKS]
-        placements[str(obj["avp_blender_plugin_object_chunk_offset"])] = baseline(obj)
+        key = str(obj["avp_blender_plugin_object_chunk_offset"])
+        previous = placements[key]
+        fresh = baseline(obj)
+        for field in light_plan.preserved_state.get(obj, ()) if light_plan is not None else ():
+            fresh[field] = previous[field]
+        placements[key] = fresh
     content = json.dumps(record, indent=0)
     if len(content) > MAX_TEXT_BYTES:
         raise ValueError("the preserved source record would exceed its size bound")

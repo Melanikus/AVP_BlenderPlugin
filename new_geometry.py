@@ -141,7 +141,8 @@ def build_additions(raw, shape, object_node, obj, saved, placement, scale,
     uv_suffix, polygon_suffix, normal_suffix = bytearray(), bytearray(), bytearray()
     vertex_sums = {index: Vector((0, 0, 0)) for index in range(old_nv, len(points))}
     uses = {index: 0 for index in vertex_sums}
-    bitmaps = read_level(raw).bmp_names
+    from .texture_import import staged_bitmaps
+    bitmaps = staged_bitmaps(text)
     for index, face in enumerate(new_faces):
         corners = list(face.vertices)
         if len(corners) not in (3, 4) or len(set(corners)) != len(corners):

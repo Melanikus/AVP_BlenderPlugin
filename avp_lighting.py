@@ -175,9 +175,13 @@ def import_source_lights(text, collection, geometry, scene, animate):
         for item in blockers.collection_objects:
             item.light_linking.link_state = 'EXCLUDE'
     animated = 0
+    imported = []
     for light in lights:
         obj = _create_light(collection, light, "AvP")
+        imported.append(obj)
         obj["avp_blender_plugin_light_import_id"] = source_id
+        obj["avp_blender_plugin_source_text"] = text.name
+        obj["avp_blender_plugin_data_chunk_offset"] = light[1]
         if light[0] != "PLOBJLIT":
             continue
         obj.light_linking.blocker_collection = blockers
@@ -192,6 +196,9 @@ def import_source_lights(text, collection, geometry, scene, animate):
         if animate:
             values, _ = placed_light_data(raw, nodes[light[1]])
             animated += animate_placed_light(obj.data, values, scene, light[1])
+    bpy.context.view_layer.update()
+    for obj in imported:
+        obj["avp_blender_plugin_light_matrix"] = [value for row in obj.matrix_world for value in row]
     if animated:
         scene.frame_set(scene.frame_current, subframe=scene.frame_subframe)
         log.info("Animated %d placed-light emitter(s); seeded flicker is not the game's random sequence", animated)

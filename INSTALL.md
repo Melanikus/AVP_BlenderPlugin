@@ -1,6 +1,6 @@
 # Install and use AVP_BlenderPlugin
 
-This guide covers AVP_BlenderPlugin 1.0.0-alpha.1 on Blender 5.2. Each step says what
+This guide covers AVP_BlenderPlugin 1.0.0-alpha.2 on Blender 5.2. Each step says what
 you should see. Words in **bold** are the words on the screen. A name in
 `<angle brackets>` stands for your own value, for example `<file>` for the
 name of the level file without `.rif`.
@@ -47,8 +47,8 @@ Contents:
 
 1. Open the Releases page:
    [github.com/Melanikus/AVP_BlenderPlugin/releases](https://github.com/Melanikus/AVP_BlenderPlugin/releases).
-2. Open the release **AVP_BlenderPlugin v1.0.0-alpha.1**.
-3. Download two files: `avp_blender_plugin-1.0.0-alpha.1.zip` and `SHA256SUMS`.
+2. Open the release **AVP_BlenderPlugin v1.0.0-alpha.2**.
+3. Download two files: `avp_blender_plugin-1.0.0-alpha.2.zip` and `SHA256SUMS`.
 4. Keep the zip as it is. Don't unzip it: Blender installs the zip itself.
 
 Don't use the source-code archives that GitHub adds to every release. They
@@ -62,11 +62,11 @@ hold the whole repository, and they are not the release package.
 2. Run:
 
    ```
-   Get-FileHash .\avp_blender_plugin-1.0.0-alpha.1.zip
+   Get-FileHash .\avp_blender_plugin-1.0.0-alpha.2.zip
    ```
 
 3. Compare the hash it prints with the one in `SHA256SUMS`. The release page
-   also prints it, after **SHA-256 of avp_blender_plugin-1.0.0-alpha.1.zip:**.
+   also prints it, after **SHA-256 of avp_blender_plugin-1.0.0-alpha.2.zip:**.
 
 You should see the same 64 characters. Upper and lower case don't matter. If
 they differ, delete the zip and download it again. On other systems, any
@@ -77,7 +77,7 @@ Two more checks, if you want them:
 - With the GitHub command-line tool, run:
 
   ```
-  gh attestation verify avp_blender_plugin-1.0.0-alpha.1.zip --repo Melanikus/AVP_BlenderPlugin
+  gh attestation verify avp_blender_plugin-1.0.0-alpha.2.zip --repo Melanikus/AVP_BlenderPlugin
   ```
 
   It checks that the file is the one the release run built.
@@ -94,7 +94,7 @@ Two more checks, if you want them:
 4. At the right end of the section's header, open the drop-down menu (the
    small arrow) and choose **Install from Disk...**.
 5. In the file browser, keep **Enable on Install** ticked. Select
-   `avp_blender_plugin-1.0.0-alpha.1.zip` and click **Install from Disk**.
+   `avp_blender_plugin-1.0.0-alpha.2.zip` and click **Install from Disk**.
 
 You should see **AVP_BlenderPlugin** in the Add-ons list, with its checkbox
 ticked. Blender asks for no permission, and no internet connection is needed.
@@ -115,7 +115,7 @@ Blender saves preferences when you close it. If you turned
 
 1. In **Add-ons**, click the arrow to the left of **AVP_BlenderPlugin**.
    - You should see **Type** Extension, **Maintainer** Melanikus,
-     **Version** 1.0.0-alpha.1, and a **File** row with the place where Blender
+     **Version** 1.0.0-alpha.2, and a **File** row with the place where Blender
      stored the add-on.
 2. Open **File > Import**.
    - You should see **AVP_BlenderPlugin RIF (.rif)**.
@@ -124,7 +124,8 @@ Blender saves preferences when you close it. If you turned
 4. Optional: in **Get Extensions**, the add-on's details show
    **Permissions**: Files. File access is its only permission. It reads level
    files and game textures, and it writes the export file you choose.
-   Importing never writes a file.
+   Importing a level never writes a file. **Import Other RIM / PNG / BMP**
+   can write loose RIM textures to the destination folder you explicitly choose.
 
 If **File > Import** also lists **Aliens vs Predator RIF (.rif)**, the old
 add-on is still installed. See [Upgrade](#upgrade).
@@ -194,8 +195,8 @@ needs the option it depends on turned on.
 |---|---|---|
 | **Preset** | **Default** | Sets many options at once (see [Presets](#presets)). You can still change them afterwards. |
 | **Strict Level Import** | On | Checks the level's geometry and textures, then imports the geometry, the textures and, if you want, the lights. Only this import can be inspected in the AvP panels and exported. Turn it off for the legacy import, which shows the **Data**, **Animation** and **Debug** boxes and is for viewing only. |
-| **Editable Game Objects** | Off | Adds markers for generators, prelights, sounds, power cables, particle generators, player starts and placed hierarchies, and boxes or markers for switches, trigger areas, damage volumes, countdowns, messages and objectives. Select one to see its panel. Works only with **Strict Level Import** on. The markers do nothing in the game and are never exported. |
-| **Import AvP Lights** | On | Creates Blender point lights from the level's first `NORMALLT` light set and from its placed lights. Their power is approximate, and light changes are not exported. This line moves into the **Data** box when **Strict Level Import** is off. |
+| **Editable Game Objects** | Off | Adds markers for generators, prelights, sounds, power cables, particle generators, player starts and placed hierarchies, and boxes or markers for switches, trigger areas, damage volumes, countdowns, messages and objectives. Select one to see its panel. Works only with **Strict Level Import** on. Light marker translation exports; other marker edits do not. |
+| **Import AvP Lights** | On | Creates Blender point lights from the level's first `NORMALLT` light set and from its placed lights. Their power is approximate. In a strict import, light translation and AvP light settings export; Blender-only power does not. This line moves into the **Data** box when **Strict Level Import** is off. |
 | **Animate Placed Lights** | On | Plays each placed light's stored strobe or flicker timing on the timeline. The flicker repeats the same way every time; it is not the game's own random sequence. Shown only with **Strict Level Import** on, and greyed out unless **Import AvP Lights** is on. |
 
 ### Presets
@@ -343,8 +344,8 @@ below). Meshes also show the panel **AvP Existing RIM Textures**.
 
 - Panels appear only for objects from an import with **Strict Level Import**
   on.
-- Lights have no AvP panel. To see a lamp's settings, select the lamp's mesh;
-  it shows **AvP Runtime Light**.
+- Imported editor lights and their markers show **AvP Editor / Prelight**.
+  A placed-light mesh and its child emitter show **AvP Placed Light Object**.
 - The panels of generators, prelights, sounds, cables, particle generators,
   player starts and hierarchies need their markers, so import with
   **Editable Game Objects** on.
@@ -360,18 +361,30 @@ From the top:
    why.
 2. Information sections, which are read-only.
 3. **Other source data is retained read-only**
-4. **Panel edits are staged, not exported**
+4. **Light edits export with geometry/UV/textures; no rebake** for light
+   panels; **Panel edits are staged, not exported** for other panels.
 5. The button **Export level (geometry / textures)**.
 
 If a panel shows **Cannot read RIF object chunk: `<reason>`**, the stored data
 for this object can't be read. Re-import the level.
 
-### Changed settings stay in Blender
+### Light settings export; other settings stay in Blender
 
-- A changed setting is stored in the `.blend` file only. It is never written
-  to a `.rif` file.
-- While any setting differs from its original value, export is refused. Set
-  the value back to the original to clear it.
+- Light settings in **AvP Editor / Prelight** and **AvP Placed Light Object**
+  are saved by export, including colour, range, flags, type, timing and
+  lighting-set ambience. Non-light settings remain staged in the `.blend`
+  file only; export skips them with a warning naming the object and setting.
+- Move a light, its marker, a placed-light mesh or its child emitter in
+  Object Mode to export its translation. Game units are whole integers,
+  with the level's environment scale applied. Rotation, scale, changed
+  parenting and constraints are refused.
+- Blender's approximate light power is not the stored brightness; change
+  brightness in the AvP panel.
+- Export warns if the light's flags require a lighting rebake to show the
+  change in game. This alpha does not rebake stored vertex lighting.
+- Light edits go out with geometry, UV and texture edits; untouched lights
+  remain byte-identical. Every feature report and error reaches the session
+  log as well as Blender's reports.
 - Blender's Undo works on these changes.
 - A wrong value is refused with a message such as
   **`<name>`: range is `<min>` to `<max>`** or
@@ -387,7 +400,8 @@ for this object can't be read. Re-import the level.
   scale.
 - Game X is Blender X. Game Z is Blender Y. Game Y is upside down in Blender:
   increasing game Y lowers Blender Z.
-- Changing a position setting moves nothing in the scene.
+- Changing a light position setting moves its linked representations and
+  exports the new position. Other position settings remain staged.
 
 ### Panels and their settings
 
@@ -396,13 +410,13 @@ Every panel of a placed object (a mesh in the level) starts with
 **Game position Z (game units)**. Marker panels don't have them. The table
 lists the other settings.
 
-| Panel | Shown for | Settings you can change (kept in Blender only) |
+| Panel | Shown for | Settings you can change (light settings export; others staged) |
 |---|---|---|
 | **AvP Module** | an ordinary level module, the only kind you can edit for export | **Air duct**, **Stairs**, **Sky**, **Fog** |
 | **AvP Door** | a door | **Air duct**, **Stairs**, **Sky**, **Fog**, **Door starts locked**, **Door opens on proximity**, **Door starts open**, **Lift door**, **Horizontal door**, **Door opening time (seconds)**, **Door closing time (seconds)** |
 | **AvP Lift** | a platform lift | **Lift starts disabled**, **Lift works once**, **Lift track start Y (game units)**, **Lift track end Y (game units)** |
-| **AvP Runtime Light** | an object with a placed light (a lamp) | **Runtime light brightness**, **Runtime light range (game units)**, **Light starts on**, **Swap colour and brightness changes**, **Suppress extra light glow**, **High colour red/green/blue (0-255)**, **Low colour red/green/blue (0-255)**, **Light fade-in time (milliseconds)**, **Light fade-out time (milliseconds)**, **Light high-state time (milliseconds)**, **Light low-state time (milliseconds)**, **Light initial timer (milliseconds)**, **Integrity multiplier (0..255)** |
-| **AvP Editor / Prelight** | a prelight marker | **Light brightness**, **Light range (game units)**, **Light position X/Y/Z (game units)**, **Light red/green/blue (0-255)** |
+| **AvP Placed Light Object** | a placed-light mesh or its child emitter | **Runtime light brightness**, **Runtime light range (game units)**, **Light starts on**, **Swap colour and brightness changes**, **Suppress extra light glow**, **High colour red/green/blue (0-255)**, **Low colour red/green/blue (0-255)**, fade/hold/initial times, stored spread, runtime light and transition types, engine/local/placed-light flag words |
+| **AvP Editor / Prelight** | an imported editor light or its marker | **Light brightness**, **Light range (game units)**, **Light position X/Y/Z (game units)**, **Light red/green/blue (0-255)**, stored spread, engine/local flag words, On/Runtime/No prelight flags, lighting-set ambience |
 | **AvP Generator** | a generator marker | **Generator starts inactive** |
 | **AvP Binary Switch** | a binary switch | **Switch starts on**, **Send same message when off**, **Send no message when off** |
 | **AvP Multi-Target Switch** | a multi-target switch | **Switch starts on (0 or 1)** |
@@ -501,6 +515,14 @@ faces. Unsupported shapes still refuse through the existing RIM picker.
 Assignments and errors appear in Blender and in the session log.
 Texture picks and UV moves can share an export; new geometry stays separate.
 
+**UV editor follows the selected face's texture** is on by default. Within
+half a second the editor displays the active selected face's own RIM.
+With several faces selected, the active face wins; without an active
+selected face, the view is left alone. Turn the checkbox off to keep your
+current image. Automatic switches never assign textures, even with
+drop-down assignment enabled. A subsequent manual drop-down pick still
+assigns normally. Automatic switches are written to the session log.
+
 ### Object Properties alternative
 
 You need a level imported with **Strict Level Import** and
@@ -536,7 +558,46 @@ Good to know:
 - The panel appears on every imported mesh. On anything that is not an
   ordinary module, the picker says
   **The RIM picker currently supports ordinary module polygons only**.
-- It offers only textures that the level already uses.
+- It offers the level's existing textures plus external textures registered
+  with **Import Other RIM / PNG / BMP**.
+
+### Add a RIM from another map, or a PNG/BMP
+
+1. Select an ordinary imported module. In either texture panel, click
+   **Import Other RIM / PNG / BMP**.
+2. Select the input file and explicitly choose **Destination game texture
+   folder**, the game-data folder containing `graphics` and/or `fastfile`.
+   The add-on never trusts a destination saved inside a `.blend`. Network
+   destinations additionally require **Allow network destination**.
+3. Confirm import. The result appears in both texture pickers; importing
+   alone does not assign it to any faces. Choose it on selected faces and
+   export normally.
+
+The add-on writes `graphics/<level>/<name>.rim` beneath the chosen folder.
+Existing files are protected unless **Overwrite texture file** is explicitly
+enabled. An existing loose RIM inside that folder's `graphics` tree is reused
+without rewriting it. Distribute the loose RIM with the exported level.
+
+PNG supports 8-bit, non-interlaced grayscale, RGB, indexed and alpha images.
+BMP supports uncompressed 8-, 24- and 32-bit Windows images with a 40-byte
+header; its reserved fourth byte is not treated as alpha. Inputs are limited
+to 16 MiB, 2048 pixels per side and 1,048,576 pixels; no more than 64 textures
+can be registered per level import. Malformed or unsupported images are
+refused with the filename and reason, without registering a texture.
+
+PNG/BMP becomes an 8-plane paletted RIM. Up to 256 colours are preserved;
+larger palettes are quantized to 216 colours with a warning. Only fully
+opaque or fully transparent pixels are supported, not partial alpha.
+Export adds the new bitmap names after saving supported geometry, UV and
+light edits. Re-import the saved RIF before further editing because adding
+bitmap names changes chunk offsets. Export refuses if a registered loose
+RIM has changed or disappeared.
+
+Folder authorization is session-only and is cleared whenever a `.blend` opens.
+For a saved level with pending custom textures, use **Authorize Texture Folder**
+in either texture panel and explicitly choose the trusted folder again before
+loading previews or exporting. Network folders require the separate network
+checkbox again. An unapproved saved path is rejected before filesystem access.
 
 ---
 
@@ -641,6 +702,15 @@ Rules:
 
 ## Export
 
+Export saves supported edits and lists unsupported edits in one warning,
+with each object's name and the reason. The same warning is in the session
+log. For example, light moves and UV changes are saved even when another
+object was moved or a modifier added. Unsupported transforms and modifiers
+are not adopted into the saved baseline; pending panel and mesh edits remain
+pending after export. If no exportable edit remains, the report says so.
+Corrupt preserved sources and invalid game values still refuse the export
+without changing the output file.
+
 1. Select any object of the level. (If the scene holds only one imported
    level, that level is used.)
 2. Click **Export level (geometry / textures)** in an AvP panel or in
@@ -731,7 +801,7 @@ Good to know:
    - Blender switches the old version off, replaces it and switches the new
      one on.
 2. Expand **AVP_BlenderPlugin** in **Add-ons** and check that **Version** shows
-   1.0.0-alpha.1. If it still shows the old version, close and reopen Blender, then
+   1.0.0-alpha.2. If it still shows the old version, close and reopen Blender, then
    check again.
 
 The add-on has no preferences, so an update loses no settings. Switching the
@@ -858,7 +928,7 @@ collections it had created.
 
 | You see | What it means | What to do |
 |---|---|---|
-| No AvP panel | The object comes from a legacy import or from another add-on, or it is a light. | Re-import with **Strict Level Import** on. For a lamp, select its mesh. |
+| No AvP panel | The object comes from a legacy import or from another add-on. | Re-import with **Strict Level Import** on. Imported lights, their markers and placed-light meshes have AvP light panels. |
 | No panel for generators, sounds and similar | Their markers were not imported. | Re-import with **Editable Game Objects** on. |
 | **AVP_BlenderPlugin: Re-import Required** | The scene holds data from an older version. | Re-import the level. |
 | **Cannot read RIF object chunk: `<reason>`** | The stored data for this object can't be read. | Re-import the level. |

@@ -66,16 +66,22 @@ LIFT_FIELDS = (
 LIGHT_FIELDS = (
     Field("brightness", "Light brightness", "Editor/prelight brightness, not a runtime placed-light behavior; 1 means 65536 fixed units. STDLIGHT.", b"STDLIGHT", 52, fmt="<i", units=65536, maximum=32767),
     Field("light_range", "Light range (game units)", "Range of this editor/prelight light in the game's integer world units. STDLIGHT.", b"STDLIGHT", 60, fmt="<i"),
-    Field("prelight_x", "Light position X (game units)", "Source light X before environment scaling. Staged signed integer; does not move the marker or rebake lighting. STDLIGHT.", b"STDLIGHT", 4, fmt="<i", minimum=-2147483648),
-    Field("prelight_y", "Light position Y (game units)", "Source light Y before scaling; increasing game Y decreases Blender Z. Staged only, no marker movement or rebake. STDLIGHT.", b"STDLIGHT", 8, fmt="<i", minimum=-2147483648),
-    Field("prelight_z", "Light position Z (game units)", "Source light Z before scaling, mapped to Blender Y. Staged signed integer; no marker movement or rebake. STDLIGHT.", b"STDLIGHT", 12, fmt="<i", minimum=-2147483648),
-    Field("prelight_red", "Light red (0-255)", "Red source byte, multiplied by 257 for the game's colour scale. Staged; refresh optional point-light preview; no rebake or export. STDLIGHT.", b"STDLIGHT", 66, fmt="<B", maximum=255),
-    Field("prelight_green", "Light green (0-255)", "Green source byte, multiplied by 257 for the game's colour scale. Staged; refresh optional point-light preview; no rebake or export. STDLIGHT.", b"STDLIGHT", 65, fmt="<B", maximum=255),
-    Field("prelight_blue", "Light blue (0-255)", "Blue source byte, multiplied by 257 for the game's colour scale. Staged; refresh optional point-light preview; no rebake or export. STDLIGHT.", b"STDLIGHT", 64, fmt="<B", maximum=255),
+    Field("prelight_x", "Light position X (game units)", "Light X before environment scaling. Moves the linked light representations and exports signed integer game units; no rebake.", b"STDLIGHT", 4, fmt="<i", minimum=-2147483648),
+    Field("prelight_y", "Light position Y (game units)", "Light Y before scaling; increasing game Y decreases Blender Z. Moves and exports the light; no rebake.", b"STDLIGHT", 8, fmt="<i", minimum=-2147483648),
+    Field("prelight_z", "Light position Z (game units)", "Light Z before scaling, mapped to Blender Y. Moves and exports the light; no rebake.", b"STDLIGHT", 12, fmt="<i", minimum=-2147483648),
+    Field("prelight_red", "Light red (0-255)", "Red source byte, multiplied by 257 for the game's colour scale. Exported; refresh optional preview; no rebake.", b"STDLIGHT", 66, fmt="<B", maximum=255),
+    Field("prelight_green", "Light green (0-255)", "Green source byte, multiplied by 257 for the game's colour scale. Exported; refresh optional preview; no rebake.", b"STDLIGHT", 65, fmt="<B", maximum=255),
+    Field("prelight_blue", "Light blue (0-255)", "Blue source byte, multiplied by 257 for the game's colour scale. Exported; refresh optional preview; no rebake.", b"STDLIGHT", 64, fmt="<B", maximum=255),
+    Field("prelight_spread", "Light spread (stored integer)", "Exact signed spread word, not degrees; stock lights use values such as 1000. The game setup does not build a spotlight cone.", b"STDLIGHT", 56, fmt="<i", minimum=-2147483648),
+    Field("prelight_engine_flags", "Engine light flags (signed bits)", "Exact signed int32 engine flag word; unknown bits are retained.", b"STDLIGHT", 68, fmt="<i", minimum=-2147483648),
+    Field("prelight_local_flags", "Local light flags (signed bits)", "Exact signed int32 editor flag word; Runtime and No prelight control game lighting.", b"STDLIGHT", 72, fmt="<i", minimum=-2147483648),
+    Field("prelight_on", "Editor light on", "Stored editor On flag; game runtime loading is controlled separately by Runtime.", b"STDLIGHT", 72, mask=1),
+    Field("prelight_runtime", "Load light at runtime", "The game loads this STDLIGHT only when its Runtime flag is set.", b"STDLIGHT", 72, mask=0x10),
+    Field("prelight_no_prelight", "No prelight (live contribution)", "Clears the game's PreLitSource flag. Existing baked vertex lighting is not rebuilt by this export.", b"STDLIGHT", 72, mask=0x40),
 )
 PLACED_LIGHT_FIELDS = (
     Field("runtime_brightness", "Runtime light brightness", "Runtime brightness; 1 means 65536 fixed units copied into LightBright. PLOBJLIT.", b"PLOBJLIT", 0, fmt="<i", units=65536, maximum=32767),
-    Field("runtime_range", "Runtime light range (game units)", "Runtime cutoff range before environment scaling. Staged only, not simulated or exported. PLOBJLIT.", b"PLOBJLIT", 8, fmt="<i"),
+    Field("runtime_range", "Runtime light range (game units)", "Runtime cutoff range before environment scaling. Exported with validated scaled limits; no rebake.", b"PLOBJLIT", 8, fmt="<i"),
     Field("runtime_on", "Light starts on", "Starts the runtime light in its on state. PLOBJLIT PlacedLightFlag_On.", b"PLOBJLIT", 56, mask=1),
     Field("runtime_swap", "Swap colour and brightness changes", "Swaps the roles of colour and brightness alterations in the runtime sequence. PLOBJLIT PlacedLightFlag_SwapColourBright.", b"PLOBJLIT", 56, mask=2),
     Field("runtime_no_glow", "Suppress extra light glow", "Omits the runtime's additional light contribution, not a physical specular highlight. PLOBJLIT PlacedLightFlag_NoSpecular.", b"PLOBJLIT", 56, mask=4),
@@ -90,6 +96,15 @@ PLACED_LIGHT_FIELDS = (
     Field("runtime_up_time", "Light high-state time (milliseconds)", "Runtime high-state hold time in milliseconds, 0 to 32767; zero loads as 1 ms. PLOBJLIT; staged only.", b"PLOBJLIT", 36, fmt="<i", maximum=32767),
     Field("runtime_down_time", "Light low-state time (milliseconds)", "Runtime low-state hold time in milliseconds, 0 to 32767; zero loads as 1 ms. PLOBJLIT; staged only.", b"PLOBJLIT", 40, fmt="<i", maximum=32767),
     Field("runtime_start_time", "Light initial timer (milliseconds)", "Initial runtime cycle timer in milliseconds, not a start delay; zero loads as 1 ms. PLOBJLIT; staged only.", b"PLOBJLIT", 44, fmt="<i", maximum=32767),
+    Field("runtime_spread", "Runtime light spread (stored integer)", "Exact signed spread word, not degrees; the game setup does not build a spotlight cone.", b"PLOBJLIT", 4, fmt="<i", minimum=-2147483648),
+    Field("runtime_pattern", "Runtime light type (0 standard, 1 strobe, 2 flicker)", "The placed light's runtime cycle type, not its scenery strategy type.", b"PLOBJLIT", 48, fmt="<i", maximum=2),
+    Field("runtime_transition", "On/off type (0 immediate, 1 fade, 2 flicker)", "Runtime on/off transition type.", b"PLOBJLIT", 52, fmt="<i", maximum=2),
+    Field("runtime_engine_flags", "Runtime engine flags (signed bits)", "Exact engine flag word; PreLitSource bit 0x40 suppresses a live contribution to prelit surfaces.", b"PLOBJLIT", 20, fmt="<i", minimum=-2147483648),
+    Field("runtime_local_flags", "Runtime local flags (signed bits)", "Stored local flags are retained, but the audited placed-light setup does not consume them.", b"PLOBJLIT", 24, fmt="<i", minimum=-2147483648),
+    Field("runtime_flags", "Placed-light flags (signed bits)", "Exact flag word; On, Swap and No extra glow are also exposed individually.", b"PLOBJLIT", 56, fmt="<i", minimum=-2147483648),
+)
+LIGHT_SET_FIELDS = (
+    Field("light_ambience", "Lighting-set ambience (0..65536)", "The stored fixed-point global ambience floor; 65536 is full intensity. Set identity and spare words remain unchanged.", b"AMBIENCE", 0, fmt="<i", maximum=65536),
 )
 GENERATOR_FIELDS = (
     Field("generator_inactive", "Generator starts inactive", "The generator starts inactive until enabled by game logic. AVPGENER flags.", b"AVPGENER", 20, mask=0x80000000),
@@ -142,8 +157,8 @@ START_FIELDS = tuple(
 SIMPLE_FIELDS = (
     Field("simple_integrity", "Integrity multiplier (0..255)", "Low byte copied to runtime integrity. Static/furniture/special/destroy-base types, screens and lights: above 20 is indestructible. Pickup policies vary; other source bits stay unchanged. AVPSTRAT 62; staged only.", b"AVPSTRAT", 32, fmt="<B", maximum=255),
 )
-INTEGER_FIELDS = PLACEMENT_FIELDS + START_FIELDS + SIMPLE_FIELDS + tuple(f for f in LIFT_FIELDS + LIGHT_FIELDS + PLACED_LIGHT_FIELDS + MULTI_SWITCH_FIELDS + FAN_FIELDS + SELF_DESTRUCT_FIELDS + MESSAGE_FIELDS if f.fmt in ("<i", "<B") and f.units == 1)
-FIELDS = {f.code: f for f in PLACEMENT_FIELDS + MODULE_FIELDS + DOOR_FIELDS + LIFT_FIELDS + LIGHT_FIELDS + PLACED_LIGHT_FIELDS + GENERATOR_FIELDS + BINARY_SWITCH_FIELDS + MULTI_SWITCH_FIELDS + FAN_FIELDS + DAMAGE_VOLUME_FIELDS + SELF_DESTRUCT_FIELDS + MESSAGE_FIELDS + MISSION_FIELDS + SOUND_FIELDS + CABLE_FIELDS + PARTICLE_FIELDS + START_FIELDS + SIMPLE_FIELDS}
+INTEGER_FIELDS = PLACEMENT_FIELDS + START_FIELDS + SIMPLE_FIELDS + tuple(f for f in LIFT_FIELDS + LIGHT_FIELDS + PLACED_LIGHT_FIELDS + LIGHT_SET_FIELDS + MULTI_SWITCH_FIELDS + FAN_FIELDS + SELF_DESTRUCT_FIELDS + MESSAGE_FIELDS if f.fmt in ("<i", "<B") and f.units == 1)
+FIELDS = {f.code: f for f in PLACEMENT_FIELDS + MODULE_FIELDS + DOOR_FIELDS + LIFT_FIELDS + LIGHT_FIELDS + PLACED_LIGHT_FIELDS + LIGHT_SET_FIELDS + GENERATOR_FIELDS + BINARY_SWITCH_FIELDS + MULTI_SWITCH_FIELDS + FAN_FIELDS + DAMAGE_VOLUME_FIELDS + SELF_DESTRUCT_FIELDS + MESSAGE_FIELDS + MISSION_FIELDS + SOUND_FIELDS + CABLE_FIELDS + PARTICLE_FIELDS + START_FIELDS + SIMPLE_FIELDS}
 
 
 @lru_cache(maxsize=2)
@@ -453,7 +468,7 @@ def applicable_fields(node, raw):
     if kind == "lift":
         return placement + LIFT_FIELDS
     if kind == "light":
-        return LIGHT_FIELDS
+        return LIGHT_FIELDS + LIGHT_SET_FIELDS
     if kind == "placed_light":
         return placement + PLACED_LIGHT_FIELDS + SIMPLE_FIELDS
     if kind in ("simple", "video_screen"):
@@ -1365,6 +1380,13 @@ def generator_info(obj, display=False):
 
 @reader_boundary("RIF field chunk")
 def field_node(node, raw, field):
+    if field in LIGHT_SET_FIELDS and node.identifier == b"STDLIGHT":
+        owners = [parent for parent in walk_tree(read_tree(raw)) if parent.identifier == b"LIGHTSET"
+                  and any(child.offset == node.offset for child in parent.children or ())]
+        if len(owners) != 1:
+            raise ValueError("Editor light has no unique source lighting set")
+        light_set_data(raw, owners[0])
+        node = owners[0]
     matches = [n for n in walk_tree(node) if n.identifier == field.identifier]
     if len(matches) != 1:
         raise ValueError(f"{field.name}: data is absent or ambiguous")
@@ -1494,6 +1516,11 @@ def set_field(obj, code, value):
     field = FIELDS[code]
     if field not in applicable_fields(node, raw):
         raise ValueError(f"{field.name}: setting does not apply to {obj.name}")
+    if classify(node, raw) in ("light", "placed_light") and code in (
+            "position_x", "position_y", "position_z", "prelight_x", "prelight_y", "prelight_z"):
+        from .light_export import set_light_position
+        set_light_position(obj, field, value)
+        return
     target = field_node(node, raw, field)
     edits = read_edits(text)
     key = f"{target.offset}:{code}"

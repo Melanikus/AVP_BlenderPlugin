@@ -9,7 +9,7 @@ object. It can also save a few kinds of edits to a level's modules into a new
 AVP_BlenderPlugin is a fork of AdiJager's BlendRIF, licensed under
 GPL-3.0-or-later. AdiJager's copyright and original credit are kept.
 
-This page describes version 1.0.0-alpha.1. It needs Blender 5.2.0 or newer.
+This page describes version 1.0.0-alpha.2. It needs Blender 5.2.0 or newer.
 
 ![The Meat Factory level imported into Blender](docs/rif_geometry.jpg)
 
@@ -77,7 +77,7 @@ lifts, lights and other placed objects.
 
 The short version:
 
-1. Download `avp_blender_plugin-1.0.0-alpha.1.zip` from the
+1. Download `avp_blender_plugin-1.0.0-alpha.2.zip` from the
    [Releases page](https://github.com/Melanikus/AVP_BlenderPlugin/releases).
    Do not unzip it.
 2. In Blender, open **Edit > Preferences...** and then the **Add-ons**
@@ -190,25 +190,25 @@ saved.
 ### Rules for every edit
 
 - The level was imported with **Strict Level Import** on.
-- Only ordinary level modules can be edited: objects whose Object tab shows
-  **AvP Module**. Doors, lifts, switches, fans, lights, scenery and other
-  placed objects can't be exported.
+- Geometry edits require ordinary level modules: objects whose Object tab
+  shows **AvP Module**. Light translation and AvP light settings also export.
+  Other doors, lifts, switches, fans and scenery edits cannot be exported.
 - The module's shape must belong to that one object. A shape that other
   objects also use is refused.
 - Shapes that come from another `.rif` (`SHPEXTFL`), morphing shapes
   (`SHPMORPH`) and animated shapes (`ANIMSEQU`) are refused.
 - A vertex move, UV moves and texture picks can go out in one export. New
   faces, and a moved centre, are each exported on their own.
-- Make your changes in Edit Mode. Don't move, rotate or scale the imported
-  objects. (The one exception is moving an object's origin to move its
-  centre. See section 5.)
+- Make geometry changes in Edit Mode. Don't rotate or scale imported
+  objects. Object Mode translation is supported for lights and for moving
+  a module's origin to move its centre (section 5).
 - Don't add, remove or rename modifiers, and don't add shape keys.
 - Don't delete or duplicate imported meshes, and don't add new objects to the
   level's collection.
 - Don't change material slots by hand. Use the texture picker.
-- Set every panel setting back to its original value. Changed panel settings
-  block export.
-- Don't move the **Editable Game Objects** markers.
+- Non-light panel settings are skipped with a named warning and remain
+  pending. Light settings are exported.
+- Don't move non-light **Editable Game Objects** markers.
 - After a door preview, click **Base shape** before you export.
 - Each export compares the scene with the last saved state of the level: the
   import, or your last successful export. After a successful export you can go
@@ -251,6 +251,10 @@ saved.
 
 ### 3. Give faces another texture from the level
 
+- In the UV Editor, **N > AvP** provides previews and assignment. By default
+  the displayed image follows the active selected face without assigning
+  anything. Disable **UV editor follows the selected face's texture** to
+  keep the current view; without an active selected face it stays unchanged.
 - Select faces in Edit Mode, then use **Choose Existing RIM Texture** to give
   them a texture that the level already uses.
 - Whole game polygons change: picking one triangle of a four-sided polygon
@@ -266,7 +270,23 @@ saved.
 - Several modules can change in one export. Blender's Undo reverses an
   assignment.
 - Not on shapes with animated textures.
-- Textures that the level does not already use are not supported.
+- To add a texture not in the map, use **Import Other RIM / PNG / BMP** in
+  either texture panel. Explicitly choose the destination game texture folder
+  in the file browser; a saved `.blend` cannot authorize a destination.
+  Network destinations also require **Allow network destination**.
+  After import, choose the new entry in either picker, then export.
+- Folder approval lasts only for the current session. After opening a saved
+  `.blend` with custom textures, use **Authorize Texture Folder** in either
+  panel before browsing or exporting them. Document paths alone never
+  authorize custom-texture reads.
+- External textures are stored under `graphics/<level>/<name>.rim`. Existing
+  files are never replaced unless **Overwrite texture file** is enabled.
+  A loose RIM already inside the chosen folder's `graphics` tree is reused.
+- PNG/BMP imports become paletted RIMs. More than 256 colours are quantized
+  with a warning; transparency must be fully opaque or fully transparent.
+  Inputs are capped at 16 MiB, 2048 pixels per side and 1,048,576 pixels.
+  After exporting new texture names, re-import the saved RIF before editing
+  further because its chunk layout has changed.
 
 ### 4. Add new faces to a module
 
@@ -311,6 +331,25 @@ This is the old level editor's Shape > Recentre Shape.
 - The buttons don't work on an object that has a parent or constraints, or
   whose mesh is shared with another object, or while it is in Edit Mode.
 
+### 6. Move and edit lights
+
+Move an imported editor light, its marker, a placed-light mesh or its child
+light in Object Mode. Its translation is saved in integer game units with
+the level's environment scale applied. Rotation, scale, parenting and
+constraints are not light edits.
+
+Use **AvP Editor / Prelight** or **AvP Placed Light Object** for brightness,
+range, colour, flags, placed-light type and timing, and lighting-set
+ambience. These source settings, not Blender's approximate wattage, are
+exported. Values outside the game's limits are refused with a reason.
+Light edits can accompany vertex, UV and texture edits in one export.
+Untouched light bytes are retained.
+
+The Runtime and No prelight flags determine live versus baked lighting.
+Export warns when a change requires rebaking; this alpha does not rebake
+the stored vertex lighting. Warnings and errors are written to the session
+log as well as Blender's reports.
+
 ### The exported file
 
 - The file browser suggests `<level>-edit.rif` in the original's folder. You
@@ -318,7 +357,9 @@ This is the old level editor's Shape > Recentre Shape.
 - If the file already exists, it is first copied to `<file>.bak`. This happens
   only once: an existing `.bak` file is never replaced.
 - The add-on writes a temporary file in the same folder and then swaps it in.
-  A refused export changes no file.
+  Invalid source data or invalid game values still refuse without changing
+  any file. Unsupported edits are skipped with one warning naming each
+  object and reason; supported edits are saved.
 - Data that your edit does not touch is kept byte for byte. An edit also
   updates what depends on it: normals, the shape's stored size and counts, and
   the sizes of the chunks that hold it.
@@ -334,27 +375,23 @@ This is the old level editor's Shape > Recentre Shape.
 
 These are shown but never written to a `.rif` file:
 
-- Panel settings. You can change the settings in the AvP panels, for
-  example **Door starts locked** or **Light brightness**. The new value is
-  kept in the `.blend` file only. While any setting differs from the original,
-  export is refused with **This export supports vertex edits only; undo the
-  AvP parameter edits first**. Setting the value back clears it. Every panel
-  says **Panel edits are staged, not exported**.
+- Non-light panel settings, such as **Door starts locked**, stay pending in
+  the `.blend` file and are listed as skipped during export. Setting the
+  value back clears it. Light panels say that their light edits export.
 - Information sections in the panels, for example
   **AI navigation (read only)**, **Stored module acoustics (read only)**,
   **Stored track sounds (read only)**,
   **Alternate locations (source; read only)** and
   **Generator / NPC source (read only)**.
-- Lights. They are ordinary Blender lights. You can change them in Blender,
-  but no change is exported.
-- Markers. **Editable Game Objects** markers are never written, and moving
-  one blocks export.
+- Blender-only light settings, including approximate power and light type.
+  Translation and the AvP light panel's source settings export instead.
+- Non-light markers. Their moves are skipped and named in the export warning.
 - Door previews. **Base shape**, **Stored target** and **Play interpolation**
   only change what you see.
 - Everything from a legacy import (**Strict Level Import** off).
-- Textures. The texture picker only reuses textures that the level already
-  has. The texture pictures, the level's texture list, `MATCHIMG` and
-  `CLRLOOKP` are never changed.
+- Existing texture files, `MATCHIMG` and `CLRLOOKP`. Adding an external texture
+  writes its loose RIM and adds a bitmap name on export; it does not rewrite
+  texture archives or existing bitmap records.
 - Baked lighting and module data. The baked vertex colours (`SHPVTINT`) are
   not relit, and the module data (`MODULEDT`) is not changed.
 
@@ -365,8 +402,9 @@ These are shown but never written to a `.rif` file:
 - This version does not yet confirm that the game loads edited levels. Work
   on copies of your game files.
 - An edited level is saved uncompressed.
-- Only ordinary modules can be edited for export, within the rules above.
-- Panel settings, lights and markers are not exported.
+- Only ordinary modules and imported lights can be edited for export,
+  within the rules above.
+- Non-light panel settings and non-light markers are not exported.
 - A legacy import (**Strict Level Import** off) can't be exported and gets no
   AvP panels.
 - **Bitmap Mode** has no effect in this version.
@@ -399,16 +437,16 @@ These are shown but never written to a `.rif` file:
 
 Each release page has a `SHA256SUMS` file and prints the zip's SHA-256.
 
-- On Windows PowerShell, run `Get-FileHash .\avp_blender_plugin-1.0.0-alpha.1.zip`.
+- On Windows PowerShell, run `Get-FileHash .\avp_blender_plugin-1.0.0-alpha.2.zip`.
   The hash it prints must equal the one in `SHA256SUMS`. Upper and lower case
   don't matter.
 - With the GitHub command-line tool, run
-  `gh attestation verify avp_blender_plugin-1.0.0-alpha.1.zip --repo Melanikus/AVP_BlenderPlugin`.
+  `gh attestation verify avp_blender_plugin-1.0.0-alpha.2.zip --repo Melanikus/AVP_BlenderPlugin`.
   It checks that the file is the one the release run built.
 - The release page links the zip's VirusTotal report.
 
 Each release is checked by Snyk Code (a code scanner) and by VirusTotal before
-it is published. Install only the file named `avp_blender_plugin-1.0.0-alpha.1.zip`.
+it is published. Install only the file named `avp_blender_plugin-1.0.0-alpha.2.zip`.
 The source-code archives that GitHub adds to every release are not the
 release package.
 

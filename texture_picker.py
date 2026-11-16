@@ -40,8 +40,12 @@ def catalogue(text):
         return _catalogues[text.name]
     raw, tree, record = source_from_text(text)
     scan = read_level(raw)
-    bitmaps = scan.bmp_names
+    from .texture_import import staged_bitmaps
+    bitmaps = staged_bitmaps(text, raw, record)
     root = record.get("texture_root")
+    if record.get("custom_textures"):
+        from .texture_import import authorized_texture_root
+        root = authorized_texture_root(text, record)
     sources = record.get("texture_sources")
     if not root or not isinstance(sources, dict) or set(sources) != {str(i) for i in bitmaps}:
         raise ValueError("Re-import with Import Materials and Game Data enabled before opening the RIM picker")
@@ -160,7 +164,9 @@ def texture_state(obj, saved):
 
 @reader_boundary("SHPPOLYS texture assignment")
 def update_texture_bytes(original, result, shape, obj, edits):
-    bitmaps = read_level(original).bmp_names
+    from .texture_import import staged_bitmaps
+    text = bpy.data.texts[obj["avp_blender_plugin_source_text"]]
+    bitmaps = staged_bitmaps(text)
     nodes = [n for n in shape.children or () if n.identifier == b"SHPPOLYS"]
     if len(nodes) != 1:
         raise ValueError("Missing or ambiguous SHPPOLYS for texture assignment")
@@ -197,7 +203,8 @@ def assign_texture(context, bitmap):
         raise ValueError("The RIM picker currently supports ordinary module polygons only")
     _, _, record = source_from_text(text)
     scan = read_level(raw)
-    bitmaps = scan.bmp_names
+    from .texture_import import staged_bitmaps
+    bitmaps = staged_bitmaps(text, raw, record)
     if not isinstance(bitmap, int) or not 0 <= bitmap <= 32767 or bitmap not in bitmaps:
         raise ValueError("Chosen texture must name an existing BMPNAMES entry (0..32767)")
     saved = record["placements"][str(node.offset)]
@@ -358,6 +365,8 @@ class AVP_BLENDER_PLUGIN_PT_texture_picker(bpy.types.Panel):
 
     def draw(self, context):
         self.layout.operator(AVP_BLENDER_PLUGIN_OT_texture_picker.bl_idname, icon='TEXTURE')
+        self.layout.operator("avp_blender_plugin.import_texture", icon='FILEBROWSER')
+        self.layout.operator("avp_blender_plugin.authorize_texture_root", icon='FILE_FOLDER')
         self.layout.label(text="Ordinary modules only; select faces in Edit Mode")
         self.layout.operator("export_scene.avp_blender_plugin", text="Export level (geometry / textures)", icon='EXPORT')
 

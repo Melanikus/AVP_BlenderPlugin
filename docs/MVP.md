@@ -1,6 +1,6 @@
 # Feature status
 
-What AVP_BlenderPlugin 1.0.0-alpha.1 does with each part of an Aliens versus
+What AVP_BlenderPlugin 1.0.0-alpha.2 does with each part of an Aliens versus
 Predator level. Words in **bold** are the words on the screen.
 
 The four statuses:
@@ -31,7 +31,7 @@ legacy import is for viewing only.
 | Import | **Bitmap Mode** **HI12** | Not supported yet | The option has no effect in this version. |
 | Import | **Use MATCHIMG** and **Use CLRLOOKP** | Not supported yet | They work only in the legacy import. |
 | Panels | One AvP panel per object kind | Shown | 26 kinds, in the Object tab of the Properties editor. |
-| Panels | Stored settings (doors, lifts, lights, switches, fans, sounds and more) | Not supported yet | You can change them in the panel, but the change stays in the `.blend` and blocks export until you set it back. |
+| Panels | Non-light stored settings (doors, lifts, switches, fans, sounds and more) | Not supported yet | Stay pending in the `.blend`; export skips them with an object-named warning while saving supported edits. |
 | Panels | Information sections | Read-only | AI navigation, acoustics, track sounds, strategies, switch details, alternate locations, light cycles, lighting sets. |
 | Panels | Door shapes | Shown | Preview each stored shape and play a one-second-each-way preview; never exported. |
 | Editing | Move one vertex of a module | Editable and exported | One vertex per export; normals and stored size follow; baked colours stay. |
@@ -43,14 +43,14 @@ legacy import is for viewing only.
 | Editing | Going on editing after an export | Editable and exported | The saved file becomes the starting point; no re-import, except after new faces. |
 | Editing | New faces or a moved centre together with other edits | Not supported yet | Each is exported on its own. |
 | Diagnostics | Log file for each Blender session | Shown | Messages, warnings and errors with their time; the panel **AvP Level Settings** shows the folder. |
-| Editing | Doors, lifts, switches, fans, lights, scenery and other placed objects | Not supported yet | Only ordinary modules (panel **AvP Module**) can be exported. |
+| Editing | Doors, lifts, switches, fans, scenery and other non-light placed objects | Not supported yet | Ordinary modules and imported lights export; other placed-object edits do not. |
 | Editing | Shared, borrowed, morphing or animated shapes | Not supported yet | Every kind of edit refuses them. |
 | Editing | Shapes with animated textures | Not supported yet | UV, texture and new-face edits refuse them; a single vertex move works. |
 | Editing | Moving, rotating or scaling objects | Not supported yet | Edit in Edit Mode; object changes block export. |
 | Editing | Adding or deleting objects | Not supported yet | New faces must go into an existing module. |
-| Editing | Textures the level does not already use | Not supported yet | The picker offers only the level's own textures. |
+| Editing | Textures the level does not already use | Editable and exported | Import Other RIM / PNG / BMP in either picker; explicitly select the destination folder. Export adds bitmap names; re-import afterward. |
 | Editing | Polygons without a texture | Not supported yet | They have no stored UVs, and the picker refuses them. |
-| Editing | Lights | Not supported yet | Light changes stay in Blender. |
+| Editing | Lights | Supported | Translate editor lights/markers or placed-light meshes/emitters; export AvP brightness/range/colour/flags/type/times and lighting-set ambience with other edits. Untouched bytes retained; rebake-required changes warn. Blender-only power is not source brightness. |
 | Editing | Markers | Not supported yet | Never written; moving one blocks export. |
 | Editing | Baked lighting (`SHPVTINT`) | Not supported yet | Not relit; new vertices copy the nearest existing colour. |
 | Export | Saving compressed files | Not supported yet | A level with edits is saved uncompressed. |

@@ -23,9 +23,11 @@ from .avp_fields import clear_display_cache
 from .vertex_export import EXPORT_OT_avp_blender_plugin, menu_export
 from . import texture_picker as _textures
 from . import uv_texture_picker as _uv_textures
+from . import texture_import as _texture_import
 from . import session_log as _session_log
 
-classes = _operator.classes + _panels.classes + _lighting.classes + _textures.classes + _uv_textures.classes + (EXPORT_OT_avp_blender_plugin,)
+classes = (_operator.classes + _panels.classes + _lighting.classes + _textures.classes
+           + _uv_textures.classes + _texture_import.classes + (EXPORT_OT_avp_blender_plugin,))
 
 
 @bpy.app.handlers.persistent
@@ -34,6 +36,7 @@ def _clear_sources_after_load(*args):
     _lighting.clear_viewports()
     clear_display_cache()
     _textures.clear_previews()
+    _texture_import.clear_root_approvals()
     _uv_textures.start()
 
 
@@ -49,6 +52,9 @@ def register():
     bpy.types.Scene.avp_blender_plugin_auto_repeat_image = bpy.props.BoolProperty(
         name="Auto Repeat Image for tiled faces", default=True,
         description="Enable UV Repeat Image for selected imported polygons whose UVs extend outside 0..1; never disable it")
+    bpy.types.Scene.avp_blender_plugin_follow_face_texture = bpy.props.BoolProperty(
+        name="UV editor follows the selected face's texture", default=True,
+        description="Show the active selected face's RIM image without assigning a texture; leave the view unchanged without an active face")
     _uv_textures.start()
     bpy.types.TOPBAR_MT_file_import.append(_operator.menu_func_import)
     bpy.types.TOPBAR_MT_file_export.append(menu_export)
@@ -66,6 +72,7 @@ def unregister():
     _lighting.clear_viewports()
     _uv_textures.stop()
     _textures.clear_previews()
+    _texture_import.clear_root_approvals()
     bpy.types.TOPBAR_MT_file_import.remove(_operator.menu_func_import)
     bpy.types.TOPBAR_MT_file_export.remove(menu_export)
     bpy.app.handlers.load_post.remove(_clear_sources_after_load)
@@ -73,6 +80,7 @@ def unregister():
         bpy.utils.unregister_class(c)
     del bpy.types.Scene.avp_blender_plugin_assign_image_dropdown
     del bpy.types.Scene.avp_blender_plugin_auto_repeat_image
+    del bpy.types.Scene.avp_blender_plugin_follow_face_texture
     clear_display_cache()
     _session_log.stop()
 

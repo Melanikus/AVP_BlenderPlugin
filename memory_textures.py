@@ -26,10 +26,12 @@ def game_path(name):
     return "graphics/" + path
 
 
-def decode_rim(data, available_memory=MAX_IMAGE_MEMORY):
+def decode_rim(data, available_memory=MAX_IMAGE_MEMORY, strict=False):
     """Return width, height and bottom-up RGBA float pixels."""
     if len(data) < 12 or data[:4] not in (b"FORM", b"LIST") or data[8:12] != b"ILBM":
         raise ValueError("Texture is not a FORM/LIST ILBM")
+    if strict and struct.unpack_from(">I", data, 4)[0] + 8 != len(data):
+        raise ValueError("RIM container length does not match the file")
     parts = {}
     count = 0
     def visit(pos, end, depth=0):
@@ -100,8 +102,12 @@ def decode_rim(data, available_memory=MAX_IMAGE_MEMORY):
                 decoded.extend(bytes([body[pos]]) * n)
                 pos += 1
         body = decoded
+        if strict and pos != len(parts[b"BODY"]):
+            raise ValueError("Trailing compressed RIM pixel data")
     elif len(body) < expected:
         raise ValueError("ILBM BODY shorter than plane rows")
+    elif strict and len(body) != expected:
+        raise ValueError("RIM BODY length does not match dimensions")
     trans_rgb = palette[transparent * 3:transparent * 3 + 3] if masking == 2 else None
     pixels = array("f", [0.0]) * (w * h * 4)
     for y in range(h):

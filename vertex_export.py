@@ -410,16 +410,28 @@ def _recentre_shape(original, result, shape, object_header, placement, origin, s
 
 def export_bytes(scene, text):
     """The bytes to save: one module vertex, stored module UVs and RIM texture picks (together, any of them), or new geometry on its own."""
-    return _export(scene, text)[0]
+    from .light_export import plan_lights
+    from .session_log import write
+    plan = plan_lights(scene, text)
+    data = _export(scene, text, plan)[0]
+    if plan.skipped:
+        message = "Skipped edits: " + "; ".join(dict.fromkeys(plan.skipped))
+        log.warning(message)
+        write("WARNING", message)
+    return data
 
 
 @reader_boundary("REBINFF2 export")
-def _export(scene, text):
+def _export(scene, text, light_plan=None):
     """Returns the bytes and the module objects whose edits they hold (the ones that need their snapshot refreshed afterwards)."""
     original, tree, record = source_from_text(text)
+    def finish(data, objects):
+        from .texture_import import apply_bitmap_names
+        return apply_bitmap_names(text, data), objects
     source_scan = read_level(original)
-    if read_edits(text):
-        raise ValueError("This export supports vertex edits only; undo the AvP parameter edits first")
+    from .light_export import plan_lights
+    if light_plan is None:
+        light_plan = plan_lights(scene, text, original, tree, record)
     placements = record.get("placements")
     if not isinstance(placements, dict):
         raise ValueError("Re-import this level with the vertex-export version first")
@@ -432,14 +444,16 @@ def _export(scene, text):
                    if collection.get("avp_blender_plugin_source_text") == text.name]
     if len(collections) != 1:
         raise ValueError("The preserved level collection is missing or duplicated")
-    if any(obj.type == 'MESH' and obj.get("avp_blender_plugin_source_text") != text.name
-           for obj in collections[0].all_objects):
-        raise ValueError("Add new geometry in Edit Mode to an existing module, not as a separate object")
+    for obj in collections[0].all_objects:
+        if obj.type == 'MESH' and obj.get("avp_blender_plugin_source_text") != text.name:
+            light_plan.skipped.append(f"{obj.name}: separate new objects are not exportable; add geometry in Edit Mode")
     objects = {}
     for obj in scene.objects:
         if obj.get("avp_blender_plugin_source_text") != text.name:
             continue
         if obj.type != 'MESH':
+            if obj in light_plan.objects:
+                continue
             if obj.get("avp_blender_plugin_data_chunk_offset") is not None:
                 node = nodes.get(obj["avp_blender_plugin_data_chunk_offset"])
                 if node is None:
@@ -455,12 +469,12 @@ def _export(scene, text):
                                  "hierarchy": "placed-hierarchy", "binary_switch": "binary-switch",
                                  "multi_switch": "multi-target-switch",
                                  "linked_switch": "linked-switch"}[classify(node, original)]
-                        raise ValueError(f"{obj.name}: editing {label} markers is not supported by vertex export")
+                        light_plan.skipped.append(f"{obj.name}: editing {label} markers is not supported")
                 else:
                     offset = node.offset + (16 if node.identifier == b"STDLIGHT" else 12)
                     x, y, z = struct.unpack_from("<3i", original, offset)
                     if tuple(obj.location) != tuple(Vector((x * scale, z * scale, -y * scale))):
-                        raise ValueError(f"{obj.name}: moving game markers is not supported by vertex export")
+                        light_plan.skipped.append(f"{obj.name}: moving game markers is not supported")
             continue
         obj.update_from_editmode()
         offset = obj.get("avp_blender_plugin_object_chunk_offset")
@@ -470,7 +484,7 @@ def _export(scene, text):
     if {str(offset) for offset in objects} != set(placements):
         raise ValueError("Imported geometry was added or removed; vertex-only export cannot save that")
 
-    result = bytearray(original)
+    result = bytearray(light_plan.raw)
     changes = []
     recentred = []
     uv_writes = 0
@@ -478,6 +492,15 @@ def _export(scene, text):
     edited_geometry = None
     additions = {}
     edited_objects = []
+    from .new_geometry import has_additions
+    regular_pending = any(
+        not has_additions(obj.data, placements[str(offset)])
+        and (mesh_signature(obj.data) != placements[str(offset)]["signature"]
+             or obj.get("avp_blender_plugin_texture_edits")
+             or ([value for row in obj.matrix_world for value in row] == placements[str(offset)]["matrix"]
+                 and coordinate_bytes(obj.data) != baseline_coordinates(
+                     placements[str(offset)], len(obj.data.vertices), obj.name)))
+        for offset, obj in objects.items())
     for offset, obj in objects.items():
         saved = placements[str(offset)]
         if not isinstance(saved, dict) or not {"signature", "matrix", "modifiers", "coordinates"} <= saved.keys():
@@ -486,55 +509,69 @@ def _export(scene, text):
             raise ValueError(f"{obj.name}: invalid preserved object chunk")
         from .new_geometry import has_additions, validate_prefix, build_additions
         growing = has_additions(obj.data, saved)
+        if growing and regular_pending:
+            light_plan.skipped.append(f"{obj.name}: new geometry must be exported separately from vertex/UV/texture edits")
+            continue
         if growing:
             validate_prefix(obj, saved)
         uv_changed = not growing and mesh_signature(obj.data) != saved["signature"]
         texture_changed = bool(obj.get("avp_blender_plugin_texture_edits"))
         uv_base = uv_sizes = None
         if growing and texture_changed:
-            raise ValueError("Export existing-polygon texture edits separately from new geometry")
+            light_plan.skipped.append(f"{obj.name}: export new geometry separately from existing texture picks")
+            continue
         if texture_changed:
             if ("topology_signature" not in saved or mesh_signature(
                     obj.data, include_uv=False, include_material=False) != saved["topology_signature"]):
-                raise ValueError(f"{obj.name}: topology changed; re-import before assigning textures")
+                light_plan.skipped.append(f"{obj.name}: topology changed; texture edits skipped")
+                continue
             # A picked polygon's UVs are kept in its new texture's space, so a UV move is the difference to that state
             from .texture_picker import texture_state
             picks, uv_base, uv_sizes = texture_state(obj, saved)
             uv_changed = _uv_bytes(obj.data) != uv_base
         elif uv_changed and ("uv_signature" not in saved
                            or mesh_signature(obj.data, include_uv=False) != saved["uv_signature"]):
-            raise ValueError(f"{obj.name}: topology or material assignment changed; re-import before exporting")
+            light_plan.skipped.append(f"{obj.name}: topology or manual material assignment changed")
+            continue
         if obj.data.shape_keys is not None:
-            raise ValueError(f"{obj.name}: shape-key edits are not supported by vertex export")
+            light_plan.skipped.append(f"{obj.name}: shape-key edits are not supported")
+            continue
         old_count = saved["mesh_counts"][0] if growing else len(obj.data.vertices)
         initial = baseline_coordinates(saved, old_count, obj.name)
         current = coordinate_bytes(obj.data)
         if [[modifier.name, modifier.type] for modifier in obj.modifiers] != saved["modifiers"]:
-            raise ValueError(f"{obj.name}: object transform or modifiers changed; use Edit Mode to move a vertex")
+            light_plan.skipped.append(f"{obj.name}: changed modifiers ignored; base mesh exported")
+            light_plan.preserved_state.setdefault(obj, set()).add("modifiers")
         origin_move = None
-        if [value for row in obj.matrix_world for value in row] != saved["matrix"]:
+        if obj not in light_plan.moved_meshes and [value for row in obj.matrix_world for value in row] != saved["matrix"]:
             # A moved object is refused. The one move the export keeps is the centre: the origin moved and the mesh moved
             # the opposite way, so nothing changed in the world.
             if not (growing or uv_changed or texture_changed):
                 origin_move = _origin_move(obj, saved, initial, current, scale)
             if origin_move is None:
-                raise ValueError(f"{obj.name}: object transform or modifiers changed; use Edit Mode to move a vertex "
-                                 "(or move only the origin, e.g. Set Origin, to recentre the shape)")
+                light_plan.skipped.append(f"{obj.name}: object transform ignored; source placement retained")
+                light_plan.preserved_state.setdefault(obj, set()).add("matrix")
+            elif regular_pending:
+                light_plan.skipped.append(f"{obj.name}: recentre must be exported separately from vertex/UV/texture edits")
+                continue
         if initial == current and not uv_changed and not texture_changed and not growing:
             continue
         if len(initial) != len(current) and not growing:
             raise ValueError(f"{obj.name}: vertex count changed")
         object_node = nodes[offset]
         if classify(object_node, original) != "module":
-            raise ValueError(f"{obj.name}: this case supports ordinary module vertices, not doors or placed objects")
+            light_plan.skipped.append(f"{obj.name}: mesh edits on doors or placed objects are not supported")
+            continue
         shape_offset = obj.get("avp_blender_plugin_shape_chunk_offset")
         if shape_offset not in nodes or nodes[shape_offset].identifier != b"REBSHAPE":
             raise ValueError(f"{obj.name}: invalid preserved shape link")
         if sum(o.get("avp_blender_plugin_shape_chunk_offset") == shape_offset for o in objects.values()) != 1:
-            raise ValueError(f"{obj.name}: shared shapes cannot be changed for one placement without changing other chunks")
+            light_plan.skipped.append(f"{obj.name}: shared shape changes are not supported")
+            continue
         shape = nodes[shape_offset]
         if any(n.identifier in (b"SHPEXTFL", b"SHPMORPH", b"ANIMSEQU") for n in shape.children or ()):
-            raise ValueError(f"{obj.name}: external/morph/animated shapes are not supported in this vertex case")
+            light_plan.skipped.append(f"{obj.name}: external/morph/animated shape changes are not supported")
+            continue
         vertex_nodes = [n for n in shape.children or () if n.identifier == b"SHPRAWVT"]
         header_nodes = [n for n in object_node.children or () if n.identifier == b"OBJHEAD1"]
         shape_headers = [n for n in shape.children or () if n.identifier == b"SHPHEAD1"]
@@ -553,17 +590,20 @@ def _export(scene, text):
                       for child in node.children or () if child.identifier == b"OBJHEAD1"
                       and struct.unpack_from("<i", original, child.offset + 68)[0] == placement.shape_id]
         if len(references) != 1:
-            raise ValueError(f"{obj.name}: the source shape is shared by other placements")
+            light_plan.skipped.append(f"{obj.name}: source shape shared by other placements")
+            continue
         if growing:
             if additions:
-                raise ValueError("Export new geometry for one module at a time")
+                light_plan.skipped.append(f"{obj.name}: new geometry limited to one module per export")
+                continue
             additions = build_additions(original, shape, object_node, obj, saved,
                                         placement, scale, source_scan.environment_scale, text)
             edited_objects.append(obj)   # new geometry changes the file's layout: the refresh refuses it and says to re-import
             continue
         if texture_changed or uv_changed:
             if any(n.identifier == b"TEXTANIM" for n in shape.children or ()):
-                raise ValueError(f"{obj.name}: animated textures are not supported")
+                light_plan.skipped.append(f"{obj.name}: animated texture changes are not supported")
+                continue
         if texture_changed or uv_changed or initial != current:
             edited_objects.append(obj)
         # A texture pick, UV moves and a vertex move each write their own bytes, so one export takes all of them.
@@ -574,7 +614,9 @@ def _export(scene, text):
             uv_writes += _update_uvs(original, result, shape, obj, saved, uv_base, uv_sizes)
         if origin_move is not None:
             if recentred:
-                raise ValueError("Export the centre of one shape at a time")
+                light_plan.skipped.append(f"{obj.name}: recentre limited to one shape per export")
+                edited_objects.remove(obj)
+                continue
             recentred.append(_recentre_shape(original, result, shape, header, placement, origin_move, scale, obj.name))
             continue
         inverse_rotation = quat_to_mat(*placement.quat).inverted()
@@ -584,7 +626,8 @@ def _export(scene, text):
                 continue
             if any(not math.isfinite(value) for value in after):
                 raise ValueError(f"{obj.name}: vertex {index} is not finite")
-            delta = obj.matrix_world.to_3x3() @ (Vector(after) - Vector(before))
+            baseline_matrix = Matrix([saved["matrix"][index:index + 4] for index in range(0, 16, 4)])
+            delta = baseline_matrix.to_3x3() @ (Vector(after) - Vector(before))
             game_delta = inverse_rotation @ Vector((delta.x / scale, -delta.z / scale, delta.y / scale))
             position = vertices.offset + 12 + index * 12
             old = struct.unpack_from("<3i", original, position)
@@ -602,21 +645,21 @@ def _export(scene, text):
     if (additions or recentred) and (changes or uv_writes or texture_writes or (additions and recentred)):
         raise ValueError("Export new geometry and a moved centre separately from vertex, UV and texture edits; undo one edit family first")
     from .raw_rif import replace_payloads
-    decoded = replace_payloads(original, tree, additions) if additions else bytes(result)
+    decoded = replace_payloads(bytes(result), tree, additions) if additions else bytes(result)
     scan = read_level(decoded)
     if recentred:
         header, position, label, shift = recentred[0]
         _check_scaled_bounds(decoded, header, position, scan.environment_scale)
         log.info("Centre export moved %s's origin by %s game units; the object's position and every vertex, the extents, the radius and "
                  "the stored centre moved with it; the shape stays where it was in the world", label, shift)
-        return decoded, edited_objects
+        return finish(decoded, edited_objects)
     if changes:
         header, placement = edited_geometry
         _check_scaled_bounds(decoded, header, placement.pos, scan.environment_scale)
         log.info("Vertex export changed %s vertex %s at byte %s: %s -> %s; derived normals/bounds updated; no size/offset fields changed", *changes[0])
-        return decoded, edited_objects
-    if uv_writes or texture_writes or additions:
-        return decoded, edited_objects
+        return finish(decoded, edited_objects)
+    if uv_writes or texture_writes or additions or light_plan.changed or record.get("custom_textures"):
+        return finish(decoded, edited_objects)
     encoded_file = record.get("compressed_file")
     if encoded_file is not None:
         raw_file = base64.b64decode("".join(encoded_file), validate=True)
@@ -691,7 +734,7 @@ def _write_level(target, data):
 class EXPORT_OT_avp_blender_plugin(bpy.types.Operator):
     bl_idname = "export_scene.avp_blender_plugin"
     bl_label = "Export AVP_BlenderPlugin RIF"
-    bl_description = "Save new module geometry, UVs, existing-texture assignments or one moved vertex"
+    bl_description = "Save validated lights with module geometry, UVs, existing-texture assignments or one moved vertex"
     filepath: bpy.props.StringProperty(subtype='FILE_PATH')
     filter_glob: bpy.props.StringProperty(default="*.rif", options={'HIDDEN'})
     check_existing: bpy.props.BoolProperty(default=True, options={'HIDDEN'})
@@ -744,14 +787,19 @@ class EXPORT_OT_avp_blender_plugin(bpy.types.Operator):
             # UV RNA arrays are unavailable while Blender owns an edit mesh.
             if restore_edit_mode:
                 bpy.ops.object.mode_set(mode='OBJECT')
-            data, edited = _export(context.scene, text)
+            from .light_export import plan_lights, finish_light_export
+            light_plan = plan_lights(context.scene, text)
+            custom_textures = bool(source_from_text(text)[2].get("custom_textures"))
+            data, edited = _export(context.scene, text, light_plan)
             backup, created = _write_level(target, data)
             # The file is saved: what was saved is now the starting point, so the next edit needs no re-import.
             refresh_warning = ""
-            if edited:
+            if edited or light_plan.changed or custom_textures:
                 from .export_refresh import refresh_after_export
                 try:
-                    refresh_after_export(text, data, edited)
+                    refresh_after_export(text, data, edited, light_plan=light_plan)
+                    if light_plan.changed:
+                        finish_light_export(text, light_plan.saved_edits)
                 except (ValueError, RuntimeError, OSError, KeyError, IndexError, struct.error) as error:
                     log.error("Snapshot refresh after export failed: %s", error)
                     refresh_warning = f"; to keep editing, re-import the saved file ({error})"
@@ -766,8 +814,15 @@ class EXPORT_OT_avp_blender_plugin(bpy.types.Operator):
         if backup is not None:
             action = "backup made" if created else "first backup kept"
             backup_report = f"; {action}: {os.path.basename(backup)}"
+        for warning in light_plan.warnings:
+            _report(self, {'WARNING'}, warning)
+        if light_plan.skipped:
+            _report(self, {'WARNING'}, "Skipped edits: " + "; ".join(dict.fromkeys(light_plan.skipped)))
         _report(self, {'WARNING' if refresh_warning else 'INFO'},
-                f"Saved {os.path.basename(target)}{backup_report}; module vertex, UV or texture export{refresh_warning}")
+                f"Saved {os.path.basename(target)}{backup_report}; module vertex, UV or texture export"
+                f"{'; light edits saved' if light_plan.changed else ''}"
+                f"{'; custom texture names saved' if custom_textures else ''}"
+                f"{'; no exportable changes' if not edited and not light_plan.changed and not custom_textures else ''}{refresh_warning}")
         return {'FINISHED'}
 
 
