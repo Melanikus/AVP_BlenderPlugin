@@ -1,6 +1,6 @@
 """Headless hostile-image and external-RIM assignment/export proof.
 
-Run with -- <game-data-folder> <proof-folder>.
+Run with -- <game-data-folder> <proof-folder>; set TEMP/TMP to an isolated test folder.
 """
 
 import binascii
@@ -148,7 +148,7 @@ class TextureImportProof(unittest.TestCase):
                                obj["avp_blender_plugin_shape_chunk_offset"] for other in linked) == 1
                        and cls.record["placements"][str(obj["avp_blender_plugin_object_chunk_offset"])]["uv_mapping"])
         cls.content = cls.text.as_string()
-        cls.temp = tempfile.TemporaryDirectory(prefix="alpha2-textures-", dir=PROOF)
+        cls.temp = tempfile.TemporaryDirectory(prefix="alpha2-textures-")
         cls.root = Path(cls.temp.name)
         cls.sources = cls.root / "incoming"
         cls.sources.mkdir()
