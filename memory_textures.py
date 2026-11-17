@@ -34,11 +34,12 @@ def decode_rim(data, available_memory=MAX_IMAGE_MEMORY, strict=False):
         raise ValueError("RIM container length does not match the file")
     parts = {}
     count = 0
+    done = False
     def visit(pos, end, depth=0):
-        nonlocal count
+        nonlocal count, done
         if depth > 4:
             raise ValueError("ILBM nesting exceeds bound")
-        while pos < end:
+        while pos < end and not done:
             if pos + 8 > end:
                 raise ValueError("Truncated ILBM chunk header")
             ident, size = struct.unpack_from(">4sI", data, pos)
@@ -54,6 +55,11 @@ def decode_rim(data, available_memory=MAX_IMAGE_MEMORY, strict=False):
                 if ident in parts:
                     raise ValueError(f"Duplicate ILBM {ident!r}")
                 parts[ident] = data[pos + 8:stop]
+                if ident == b"BODY" and not strict:
+                    # The game reads a RIM only up to its BODY (RimLoader.cpp:135-182: the tag walk ends at BODY, then the
+                    # pixels are read) and never looks at what follows, such as the LIST MIPM mip-map record that stock RIMs
+                    # carry after the picture (Caverns_A's falllift, Vaults' LIFT01). So the walk ends there too.
+                    done = True
             pos = stop + (size & 1)
     visit(0, len(data))
     header = parts.get(b"BMHD", b"")

@@ -36,6 +36,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Levels whose textures carry a mip-map record import again.** Stock RIMs such as Caverns_A's `falllift` and Vaults'
+  `LIFT01` hold a `LIST MIPM` after the picture. The decoder refused the whole level ("Invalid ILBM container"); like
+  the game's RIM reader (`RimLoader.cpp`), it now reads up to the picture's `BODY` and stops there. A mip-map record
+  before the picture is still refused, and a mapper's own RIM is still checked whole.
 - **Editing goes on after a successful export, without a re-import.** An export compared the objects with a snapshot taken
   at import, so the next edit of another kind was refused until the level was imported again. After a successful export the
   snapshot is now taken again from what was saved (a vertex move, UV moves and texture picks). Exporting new geometry
