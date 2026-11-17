@@ -99,9 +99,13 @@ def rebuild_tree(raw, node):
         rebuild_tree(raw, child) for child in node.children)
 
 
-def replace_payloads(raw, tree, replacements):
-    """Replace selected leaves and resize only their ancestor framing."""
+def replace_payloads(raw, tree, replacements, prepend=None):
+    """Replace selected leaves and resize only their ancestor framing.
+
+    `prepend` maps a container's offset to whole chunk bytes put in front of its children (a new SHPMORPH in a shape).
+    """
     remaining = set(replacements)
+    pending = set(prepend or ())
 
     def rebuild(node):
         if node.offset in replacements:
@@ -113,12 +117,15 @@ def replace_payloads(raw, tree, replacements):
             return raw[node.offset:node.offset + node.size]
         else:
             body = b"".join(rebuild(child) for child in node.children)
+            if node.offset in pending:
+                pending.remove(node.offset)
+                body = prepend[node.offset] + body
         if len(body) + 12 > MAX_RIF_BYTES:
             raise ValueError("Rebuilt RIF exceeds supported size bounds")
         return node.identifier + struct.pack("<i", len(body) + 12) + body
 
     result = rebuild(tree)
-    if remaining:
+    if remaining or pending:
         raise ValueError("Replacement payload does not belong to the source tree")
     return result
 
@@ -172,6 +179,8 @@ def retain_source(scene, collection, raw, tree, filepath, scale, include_markers
             if baseline_bytes > MAX_RIF_BYTES:
                 raise ValueError("Imported vertex baseline exceeds 32 MiB")
             record["placements"][str(objects[index][0])] = baseline(obj)
+    from .door_morph import create_poses
+    record["poses"] = create_poses(collection, raw, tree, objects, shapes, scale, baseline)
     content = json.dumps(record, indent=0)
     if len(content) > MAX_TEXT_BYTES:
         raise ValueError("Preserved source record exceeds size bound")

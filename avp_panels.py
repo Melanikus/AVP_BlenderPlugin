@@ -20,6 +20,7 @@ from .avp_fields import (
     object_source, particle_info, placed_light_info, platform_lift_info, read_edits, self_destruct_info, set_field, simple_info, sound_info, start_info, stdlight_info,
     switch_door_info, teleport_info, track_destruction_info, track_info, track_sounds_info,
 )
+from . import door_morph
 from .session_log import report as _report
 from .utils import log
 from .geometry import quat_to_mat
@@ -242,9 +243,26 @@ class AVP_BLENDER_PLUGIN_OT_play_door(bpy.types.Operator):
                 return {'CANCELLED'}
             return {'FINISHED'}
         try:
-            obj = context.object
-            if obj is None or obj.mode != 'OBJECT':
+            obj = door_morph.find_door(context.object) or context.object
+            if obj is None or obj.mode != 'OBJECT' or context.object.mode != 'OBJECT':
                 raise ValueError("Use Object Mode to play door interpolation")
+            pose = door_morph.find_pose(obj)
+            if pose is not None and self.target_id == -1 and obj.get("avp_blender_plugin_morph_preview", -1) == -1:
+                # the two meshes as they are now: the first pose (the door) and the second pose, blended in a straight line as the game does
+                from .raw_rif import source_from_text
+                _, _, record = source_from_text(bpy.data.texts[obj["avp_blender_plugin_source_text"]])
+                saved = record["placements"][str(obj["avp_blender_plugin_object_chunk_offset"])]
+                _check_door_mesh(obj, saved)
+                base = array("f", [0]) * (len(obj.data.vertices) * 3)
+                obj.data.vertices.foreach_get("co", base)
+                target = array("f", door_morph.pose_in_door_space(obj, pose))
+                playback = _DoorPlayback(obj, pose.get("avp_blender_plugin_pose_id", 1),
+                                         lambda identifier: base if identifier == -1 else target, saved, base)
+                bpy.app.timers.register(playback.callback, first_interval=0.0)
+                _door_playback = playback
+                _door_playback_error = ""
+                _report(self, {'INFO'}, f"Door: {obj.name} to {pose.name} and back, one second each way")
+                return {'FINISHED'}
             targets, coordinates, saved, previous = _door_preview_geometry(obj)
             current = obj.get("avp_blender_plugin_morph_preview", -1)
             identifier = self.target_id
@@ -441,7 +459,7 @@ class _ObjectPanel:
     @classmethod
     def poll(cls, context):
         obj = context.object
-        if obj is None or not obj.get("avp_blender_plugin_source_text"):
+        if obj is None or not obj.get("avp_blender_plugin_source_text") or obj.get(door_morph.PROP_TARGET) is not None:
             return False
         try:
             text, raw, tree, node = object_source(obj, display=True)
@@ -1508,6 +1526,70 @@ class AVP_BLENDER_PLUGIN_PT_lighting_sets(bpy.types.Panel):
             self.layout.label(text=str(error), icon='ERROR')
 
 
+class AVP_BLENDER_PLUGIN_OT_swap_door_pose(bpy.types.Operator):
+    bl_idname = "avp_blender_plugin.swap_door_pose"
+    bl_label = "Show the other pose"
+    bl_description = "Hide this pose of the door (open or closed) and show the other one, to edit one pose at a time"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        try:
+            if context.mode != 'OBJECT':
+                raise ValueError("Use Object Mode to switch poses")
+            door = door_morph.find_door(context.object)
+            pose = door_morph.find_pose(door)
+            if door is None or pose is None:
+                raise ValueError("Select a door that has a second pose, or the pose itself")
+            show_pose = pose.hide_get()
+            pose.hide_set(not show_pose)
+            door.hide_set(show_pose)
+            shown = pose if show_pose else door
+            for selected in context.selected_objects:
+                selected.select_set(False)
+            shown.select_set(True)
+            context.view_layer.objects.active = shown
+        except (ValueError, RuntimeError, ReferenceError) as error:
+            _report(self, {'ERROR'}, str(error))
+            return {'CANCELLED'}
+        return {'FINISHED'}
+
+
+class AVP_BLENDER_PLUGIN_PT_door_poses(bpy.types.Panel):
+    bl_label = "AvP Door Poses"
+    bl_idname = "AVP_BLENDER_PLUGIN_PT_door_poses"
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+    bl_context = "object"
+
+    @classmethod
+    def poll(cls, context):
+        obj = context.object
+        if obj is None or obj.type != 'MESH' or not obj.get("avp_blender_plugin_source_text"):
+            return False
+        return door_morph.find_pose(door_morph.find_door(obj)) is not None
+
+    def draw(self, context):
+        door = door_morph.find_door(context.object)
+        pose = door_morph.find_pose(door)
+        layout = self.layout
+        # The game's doors (proximity, lift and switch doors, object_setup.cpp:1845-1901) take the shape itself as the OPEN door and the
+        # stored pose as the CLOSED door
+        layout.label(text=f"Open: {door.name}")
+        stored = pose.get(door_morph.PROP_TARGET) is not None
+        layout.label(text=f"Closed: {pose.name}" + ("" if stored else " (new: the next export adds it)"))
+        if len(pose.data.vertices) == len(door.data.vertices):
+            layout.label(text=f"{len(door.data.vertices)} vertices in each; only the vertices may differ", icon='INFO')
+        else:
+            layout.label(text=f"Vertex counts differ ({len(door.data.vertices)} and {len(pose.data.vertices)}): not exportable", icon='ERROR')
+        layout.operator("avp_blender_plugin.swap_door_pose",
+                        text="Show closed" if pose.hide_get() else "Show open")
+        layout.operator("avp_blender_plugin.play_door",
+                        text="Stop" if _door_playback is not None else "Play door (open to closed and back)")
+        if _door_playback_error:
+            layout.label(text=_door_playback_error, icon='ERROR')
+        layout.label(text="The game moves every vertex in a straight line between open and closed; the open door's faces are drawn")
+
+
 class AVP_BLENDER_PLUGIN_PT_reimport(bpy.types.Panel):
     bl_label = "AVP_BlenderPlugin: Re-import Required"
     bl_idname = "AVP_BLENDER_PLUGIN_PT_reimport"
@@ -1524,7 +1606,7 @@ class AVP_BLENDER_PLUGIN_PT_reimport(bpy.types.Panel):
         self.layout.label(text="Old data is not migrated or exported.")
 
 
-classes = (AVP_BLENDER_PLUGIN_PT_reimport, AVP_BLENDER_PLUGIN_OT_edit_field, AVP_BLENDER_PLUGIN_OT_recentre_shape, AVP_BLENDER_PLUGIN_OT_preview_door, AVP_BLENDER_PLUGIN_OT_play_door, AVP_BLENDER_PLUGIN_PT_module, AVP_BLENDER_PLUGIN_PT_door, AVP_BLENDER_PLUGIN_PT_lift,
+classes = (AVP_BLENDER_PLUGIN_OT_swap_door_pose, AVP_BLENDER_PLUGIN_PT_door_poses, AVP_BLENDER_PLUGIN_PT_reimport, AVP_BLENDER_PLUGIN_OT_edit_field, AVP_BLENDER_PLUGIN_OT_recentre_shape, AVP_BLENDER_PLUGIN_OT_preview_door, AVP_BLENDER_PLUGIN_OT_play_door, AVP_BLENDER_PLUGIN_PT_module, AVP_BLENDER_PLUGIN_PT_door, AVP_BLENDER_PLUGIN_PT_lift,
            AVP_BLENDER_PLUGIN_PT_light, AVP_BLENDER_PLUGIN_PT_placed_light, AVP_BLENDER_PLUGIN_PT_generator, AVP_BLENDER_PLUGIN_PT_object, AVP_BLENDER_PLUGIN_PT_binary_switch,
            AVP_BLENDER_PLUGIN_PT_multi_switch, AVP_BLENDER_PLUGIN_PT_linked_switch, AVP_BLENDER_PLUGIN_PT_area_switch, AVP_BLENDER_PLUGIN_PT_fan,
            AVP_BLENDER_PLUGIN_PT_damage_volume, AVP_BLENDER_PLUGIN_PT_self_destruct, AVP_BLENDER_PLUGIN_PT_message, AVP_BLENDER_PLUGIN_PT_mission,

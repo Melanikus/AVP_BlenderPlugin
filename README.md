@@ -158,8 +158,11 @@ faces.
   **AvP Lift** or **AvP Runtime Light**. There are 26 kinds. Each panel lists
   the stored settings and information. See
   [The AvP panels](INSTALL.md#the-avp-panels).
-- Door shapes: in **AvP Door**, you can show a door's stored shapes and
-  play a preview that moves it one second each way.
+- Door poses: every morphing door, lift door and switch door comes in as
+  two meshes, the door open and `<door>_MORPH` closed (hidden). Both are real
+  meshes you can edit, and both export (section 7). **AvP Door Poses**
+  switches between them and plays the door: the game moves every vertex in
+  a straight line from open to closed.
 
 ### With Strict Level Import off (legacy import, for viewing only)
 
@@ -191,12 +194,14 @@ saved.
 
 - The level was imported with **Strict Level Import** on.
 - Geometry edits require ordinary level modules: objects whose Object tab
-  shows **AvP Module**. Light translation and AvP light settings also export.
-  Other doors, lifts, switches, fans and scenery edits cannot be exported.
+  shows **AvP Module**, and the vertices of morphing doors (section 7). Light
+  translation and AvP light settings also export. Other lifts, switches, fans
+  and scenery edits cannot be exported.
 - The module's shape must belong to that one object. A shape that other
   objects also use is refused.
-- Shapes that come from another `.rif` (`SHPEXTFL`), morphing shapes
-  (`SHPMORPH`) and animated shapes (`ANIMSEQU`) are refused.
+- Shapes that come from another `.rif` (`SHPEXTFL`) and animated shapes
+  (`ANIMSEQU`) are refused. Morphing shapes (`SHPMORPH`) take vertex moves
+  only (section 7).
 - A vertex move, UV moves and texture picks can go out in one export. New
   faces, and a moved centre, are each exported on their own.
 - Make geometry changes in Edit Mode. Don't rotate or scale imported
@@ -204,7 +209,8 @@ saved.
   a module's origin to move its centre (section 5).
 - Don't add, remove or rename modifiers, and don't add shape keys.
 - Don't delete or duplicate imported meshes, and don't add new objects to the
-  level's collection.
+  level's collection. The one copy that exports is a module's copy named
+  `<module>_MORPH` (section 8).
 - Don't change material slots by hand. Use the texture picker.
 - Non-light panel settings are skipped with a named warning and remain
   pending. Light settings are exported.
@@ -350,6 +356,50 @@ Export warns when a change requires rebaking; this alpha does not rebake
 the stored vertex lighting. Warnings and errors are written to the session
 log as well as Blender's reports.
 
+### 7. Edit a door's two poses
+
+A morphing door is one mesh in two poses. The door object is the door
+open; `<door>_MORPH` is the door closed. The game moves every vertex in a
+straight line between them, so you shape both poses and the movement
+follows. Proximity doors, lift doors and switch doors all work this way.
+
+1. Select the door. In **AvP Door Poses**, click **Show closed**. The door
+   hides and `<door>_MORPH` shows. Click **Show open** to go back.
+2. Move vertices of either pose in Edit Mode, as many as you like.
+3. Click **Play door** to watch it close and open again.
+4. Export.
+
+- Only vertices may move. Both poses keep the door's vertices, faces, UVs and
+  materials; the game draws the open door's faces in both. Edit textures and
+  UVs on the door, not on `<door>_MORPH`.
+- Lifts themselves (the platforms) move along a track, not between poses,
+  so they have no `_MORPH`. The game only opens and closes modules: a placed
+  object never uses a second pose, so it gets none.
+- Don't move, rotate or scale the pose objects; move their vertices.
+- Moves are rounded to whole game units. The export rewrites the normals of
+  the faces that use a moved vertex and grows the pose's size if needed.
+- Door edits go out in the same export as module vertex, UV, texture and
+  light edits.
+
+### 8. Make a door from a module
+
+1. Select the module in Object Mode and duplicate it (Shift+D, then right
+   click so it stays in place).
+2. Rename the copy `<module>_MORPH`, for example `Genshd1_PROC05_MORPH`.
+3. The module is the door open. Move the copy's vertices in Edit Mode to
+   where the door is closed. Don't add or delete vertices; the vertex count
+   must stay the same.
+4. **Play door** shows the movement before you export.
+5. Export, on its own (not together with other edits). The module gets the
+   closed pose, and with no strategy the game makes it a proximity door.
+   Import the saved file to keep editing.
+
+- A module that already has a closed pose refuses another copy: edit its
+  `<module>_MORPH` instead.
+- The module's shape must belong to that one object.
+- Only modules: a copy of a placed object is refused, because the game never
+  opens a placed object.
+
 ### The exported file
 
 - The file browser suggests `<level>-edit.rif` in the original's folder. You
@@ -386,8 +436,8 @@ These are shown but never written to a `.rif` file:
 - Blender-only light settings, including approximate power and light type.
   Translation and the AvP light panel's source settings export instead.
 - Non-light markers. Their moves are skipped and named in the export warning.
-- Door previews. **Base shape**, **Stored target** and **Play interpolation**
-  only change what you see.
+- Door previews. **Base shape**, **Stored target**, **Play interpolation** and
+  **Play door** only change what you see; the poses you edit are what export.
 - Everything from a legacy import (**Strict Level Import** off).
 - Existing texture files, `MATCHIMG` and `CLRLOOKP`. Adding an external texture
   writes its loose RIM and adds a bitmap name on export; it does not rewrite
@@ -402,8 +452,10 @@ These are shown but never written to a `.rif` file:
 - This version does not yet confirm that the game loads edited levels. Work
   on copies of your game files.
 - An edited level is saved uncompressed.
-- Only ordinary modules and imported lights can be edited for export,
-  within the rules above.
+- Only ordinary modules, the vertices of morphing doors and imported lights
+  can be edited for export, within the rules above.
+- A door has one closed pose. Every stock door has exactly one; a new copy
+  adds one to a module that has none.
 - Non-light panel settings and non-light markers are not exported.
 - A legacy import (**Strict Level Import** off) can't be exported and gets no
   AvP panels.
@@ -419,7 +471,8 @@ These are shown but never written to a `.rif` file:
   level animations come only with a legacy import. Each level-track section
   lasts one second (the stored timing is not used), and character frames are
   spread evenly over each sequence.
-- Morph targets (legacy import only) are separate meshes, not shape keys.
+- A door's closed pose is its own mesh, not a shape key, so the two poses
+  can be edited apart.
 - There is no tab in the 3D View sidebar and there are no add-on preferences.
   Options are in the import file browser, Properties editor and UV Editor's
   **AvP** sidebar. World-tab AvP panels use the active imported object.
