@@ -1,6 +1,6 @@
 # Install and use AVP_BlenderPlugin
 
-This guide covers AVP_BlenderPlugin 1.0.0-alpha.3 on Blender 5.2. Each step says what
+This guide covers AVP_BlenderPlugin 1.0.0-alpha.4 on Blender 5.2. Each step says what
 you should see. Words in **bold** are the words on the screen. A name in
 `<angle brackets>` stands for your own value, for example `<file>` for the
 name of the level file without `.rif`.
@@ -48,8 +48,8 @@ Contents:
 
 1. Open the Releases page:
    [github.com/Melanikus/AVP_BlenderPlugin/releases](https://github.com/Melanikus/AVP_BlenderPlugin/releases).
-2. Open the release **AVP_BlenderPlugin v1.0.0-alpha.3**.
-3. Download two files: `avp_blender_plugin-1.0.0-alpha.3.zip` and `SHA256SUMS`.
+2. Open the release **AVP_BlenderPlugin v1.0.0-alpha.4**.
+3. Download two files: `avp_blender_plugin-1.0.0-alpha.4.zip` and `SHA256SUMS`.
 4. Keep the zip as it is. Don't unzip it: Blender installs the zip itself.
 
 Don't use the source-code archives that GitHub adds to every release. They
@@ -63,11 +63,11 @@ hold the whole repository, and they are not the release package.
 2. Run:
 
    ```
-   Get-FileHash .\avp_blender_plugin-1.0.0-alpha.3.zip
+   Get-FileHash .\avp_blender_plugin-1.0.0-alpha.4.zip
    ```
 
 3. Compare the hash it prints with the one in `SHA256SUMS`. The release page
-   also prints it, after **SHA-256 of avp_blender_plugin-1.0.0-alpha.3.zip:**.
+   also prints it, after **SHA-256 of avp_blender_plugin-1.0.0-alpha.4.zip:**.
 
 You should see the same 64 characters. Upper and lower case don't matter. If
 they differ, delete the zip and download it again. On other systems, any
@@ -78,7 +78,7 @@ Two more checks, if you want them:
 - With the GitHub command-line tool, run:
 
   ```
-  gh attestation verify avp_blender_plugin-1.0.0-alpha.3.zip --repo Melanikus/AVP_BlenderPlugin
+  gh attestation verify avp_blender_plugin-1.0.0-alpha.4.zip --repo Melanikus/AVP_BlenderPlugin
   ```
 
   It checks that the file is the one the release run built.
@@ -95,7 +95,7 @@ Two more checks, if you want them:
 4. At the right end of the section's header, open the drop-down menu (the
    small arrow) and choose **Install from Disk...**.
 5. In the file browser, keep **Enable on Install** ticked. Select
-   `avp_blender_plugin-1.0.0-alpha.3.zip` and click **Install from Disk**.
+   `avp_blender_plugin-1.0.0-alpha.4.zip` and click **Install from Disk**.
 
 You should see **AVP_BlenderPlugin** in the Add-ons list, with its checkbox
 ticked. Blender asks for no permission, and no internet connection is needed.
@@ -116,7 +116,7 @@ Blender saves preferences when you close it. If you turned
 
 1. In **Add-ons**, click the arrow to the left of **AVP_BlenderPlugin**.
    - You should see **Type** Extension, **Maintainer** Melanikus,
-     **Version** 1.0.0-alpha.3, and a **File** row with the place where Blender
+     **Version** 1.0.0-alpha.4, and a **File** row with the place where Blender
      stored the add-on.
 2. Open **File > Import**.
    - You should see **AVP_BlenderPlugin RIF (.rif)**.
@@ -836,7 +836,7 @@ Good to know:
    - Blender switches the old version off, replaces it and switches the new
      one on.
 2. Expand **AVP_BlenderPlugin** in **Add-ons** and check that **Version** shows
-   1.0.0-alpha.3. If it still shows the old version, close and reopen Blender, then
+   1.0.0-alpha.4. If it still shows the old version, close and reopen Blender, then
    check again.
 
 The add-on has no preferences, so an update loses no settings. Switching the
