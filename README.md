@@ -9,7 +9,7 @@ object. It can also save a few kinds of edits to a level's modules into a new
 AVP_BlenderPlugin is a fork of AdiJager's BlendRIF, licensed under
 GPL-3.0-or-later. AdiJager's copyright and original credit are kept.
 
-This page describes version 1.0.0-alpha.3. It needs Blender 5.2.0 or newer.
+This page describes version 1.0.0-alpha.4. It needs Blender 5.2.0 or newer.
 
 ![The Meat Factory level imported into Blender](docs/rif_geometry.jpg)
 
@@ -77,7 +77,7 @@ lifts, lights and other placed objects.
 
 The short version:
 
-1. Download `avp_blender_plugin-1.0.0-alpha.3.zip` from the
+1. Download `avp_blender_plugin-1.0.0-alpha.4.zip` from the
    [Releases page](https://github.com/Melanikus/AVP_BlenderPlugin/releases).
    Do not unzip it.
 2. In Blender, open **Edit > Preferences...** and then the **Add-ons**
@@ -451,10 +451,15 @@ These are shown but never written to a `.rif` file:
 
 - This version does not yet confirm that the game loads edited levels. Work
   on copies of your game files.
-- 44 of the 63 stock levels import. 17 others stop at a SADAR weapon
-  pickup (`sadar0` or `sadar1`, "bitmap 2 not found"), mostly multiplayer
-  levels. Base and E3demoSP stop because a lift uses `liftmtl.rim`, a
-  texture the game does not ship.
+- Every stock level imports (all 63). What an import can't load is named
+  in red in Blender, one line per item, and in `<level>-import-log.txt`
+  beside the level: a texture or bitmap that isn't there gets a magenta
+  placeholder named after it, and a part that can't be read is left out
+  of the scene. Both stay in the level as they were and are saved
+  unchanged; they can't be edited in Blender. In the stock levels these are
+  the SADAR pickup's bitmap 2 (missing from `SADAR.rif` itself; the game
+  draws those faces untextured too) and, in Base and E3demoSP, the lift
+  texture `LiftMtl.RIM` in a folder the game doesn't ship.
 - An edited level is saved uncompressed.
 - Only ordinary modules, the vertices of morphing doors and imported lights
   can be edited for export, within the rules above.
@@ -494,16 +499,16 @@ These are shown but never written to a `.rif` file:
 
 Each release page has a `SHA256SUMS` file and prints the zip's SHA-256.
 
-- On Windows PowerShell, run `Get-FileHash .\avp_blender_plugin-1.0.0-alpha.3.zip`.
+- On Windows PowerShell, run `Get-FileHash .\avp_blender_plugin-1.0.0-alpha.4.zip`.
   The hash it prints must equal the one in `SHA256SUMS`. Upper and lower case
   don't matter.
 - With the GitHub command-line tool, run
-  `gh attestation verify avp_blender_plugin-1.0.0-alpha.3.zip --repo Melanikus/AVP_BlenderPlugin`.
+  `gh attestation verify avp_blender_plugin-1.0.0-alpha.4.zip --repo Melanikus/AVP_BlenderPlugin`.
   It checks that the file is the one the release run built.
 - The release page links the zip's VirusTotal report.
 
 Each release is checked by Snyk Code (a code scanner) and by VirusTotal before
-it is published. Install only the file named `avp_blender_plugin-1.0.0-alpha.3.zip`.
+it is published. Install only the file named `avp_blender_plugin-1.0.0-alpha.4.zip`.
 The source-code archives that GitHub adds to every release are not the
 release package.
 

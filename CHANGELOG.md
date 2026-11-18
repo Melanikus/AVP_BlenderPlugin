@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Every level imports; what can't be loaded is named, kept and saved unchanged.** A texture or bitmap that isn't
+  anywhere no longer stops an import: it gets a magenta placeholder material named after it (`<level>_MISSING_<file>`),
+  as the game itself draws such a polygon untextured (`chunk_load.cpp` `copy_to_shapeheader`). A shape or object the
+  reader can't read is left out of the scene instead of stopping the import. A level with no game data anywhere
+  imports with every texture a placeholder. Each item is shown in red in Blender (one line each) and written to
+  `<level>-import-log.txt` beside the level. The level's own bytes for all of them are copied through unchanged on
+  export, an edit never touches them, and an export that would make a readable part unreadable is refused. All 63 stock
+  levels import (19 did not on alpha.3).
+- **Linked shape RIFs are followed.** The new **Shape RIFs** import option, and by default the game data's or Steam's
+  `Tools\shape_rifs`, supply the bitmaps of a level's linked pickup and weapon shapes (such as `SADAR.rif`). The level's
+  own copy of the shape is still what is drawn and saved.
+
 - **Morph doors as two editable meshes.** Every morphing door, lift door and switch door now imports as the door open
   and a hidden `<door>_MORPH` mesh closed (the game's SUBSHAPE; the game takes the shape as open and the stored pose as
   closed, `object_setup.cpp` 1845-1901): the door's faces, UVs and materials with the pose's own vertices. Vertex moves

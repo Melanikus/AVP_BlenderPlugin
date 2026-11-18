@@ -71,7 +71,7 @@ def authorize_texture_root(text, root, allow_network=False):
 def staged_bitmaps(text, raw=None, record=None):
     if raw is None:
         raw, tree, record = source_from_text(text)
-    bitmaps = read_level(raw).bmp_names.copy()
+    bitmaps = read_level(raw, skipped=[]).bmp_names.copy()
     custom = record.get("custom_textures", {})
     if not isinstance(custom, dict) or len(custom) > MAX_CUSTOM_TEXTURES:
         raise ValueError("Invalid or oversized custom texture list")
@@ -123,7 +123,7 @@ def apply_bitmap_names(text, raw):
     if set(parsed) != set(expected) or any(parsed[index].raw_name != expected[index].raw_name for index in expected):
         raise ValueError("New BMPNAMES failed its own reader round trip")
     result = replace_payloads(raw, tree, {node.offset: bytes(payload)})
-    if set(read_level(result).bmp_names) != set(expected):
+    if set(read_level(result, skipped=[]).bmp_names) != set(expected):
         raise ValueError("Exported custom bitmap list failed level validation")
     return result
 

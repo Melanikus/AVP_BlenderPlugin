@@ -142,7 +142,7 @@ def set_light_position(obj, field, value):
     bpy.context.view_layer.update()
     position = list(current_position(obj, raw, node, scale, record))
     position["xyz".index(field.code[-1])] = encoded_value(field, value)
-    _check_position(position, read_level(raw).environment_scale)
+    _check_position(position, read_level(raw, skipped=[]).environment_scale)
     objects = _linked_objects(bpy.context.scene, text, node)
     owners = [other for other in objects if other.type == 'MESH']
     for other in objects:
@@ -158,7 +158,7 @@ def plan_lights(scene, text, original=None, tree=None, record=None):
     scale = record.get("scale")
     if not isinstance(scale, (int, float)) or not math.isfinite(scale) or scale <= 0:
         raise ValueError("Invalid preserved light import scale")
-    scan = read_level(original)
+    scan = read_level(original, skipped=[])
     nodes = {node.offset: node for node in walk_tree(tree)}
     placed = [node for node in nodes.values() if node.identifier == b"RBOBJECT"
               and classify(node, original) == "placed_light"]

@@ -39,7 +39,7 @@ def catalogue(text):
     if text.name in _catalogues:
         return _catalogues[text.name]
     raw, tree, record = source_from_text(text)
-    scan = read_level(raw)
+    scan = read_level(raw, skipped=[])
     from .texture_import import staged_bitmaps
     bitmaps = staged_bitmaps(text, raw, record)
     root = record.get("texture_root")
@@ -204,7 +204,7 @@ def assign_texture(context, bitmap):
     if classify(node, raw) != "module":
         raise ValueError("The RIM picker currently supports ordinary module polygons only")
     _, _, record = source_from_text(text)
-    scan = read_level(raw)
+    scan = read_level(raw, skipped=[])
     from .texture_import import staged_bitmaps
     bitmaps = staged_bitmaps(text, raw, record)
     if not isinstance(bitmap, int) or not 0 <= bitmap <= 32767 or bitmap not in bitmaps:
