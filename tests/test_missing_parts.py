@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import struct
 import unittest
+import unittest.mock
 
 from avp_blender_plugin.import_report import lines_for
 from avp_blender_plugin.level_validation import UNREADABLE_OBJECT, read_level
@@ -68,6 +69,79 @@ class TestTolerantReader(unittest.TestCase):
         skipped = []
         read_level(_level(_shape(1), _object(1, "good")), skipped=skipped)
         self.assertEqual(skipped, [])
+
+
+class TestUnreadKept(unittest.TestCase):
+    """The export's last check on the bytes it saves (vertex_export._check_unread_kept)."""
+
+    def setUp(self):
+        from avp_blender_plugin.raw_rif import read_tree
+        self.read_tree = read_tree
+        self.level = _level(_shape(1), _shape(2, corner=99), _object(1, "good"), _object(2, "bad"))
+        self.tree = read_tree(self.level)
+        self.unread = []
+        read_level(self.level, skipped=self.unread)
+
+    def _check(self, data):
+        from avp_blender_plugin.vertex_export import _check_unread_kept
+        _check_unread_kept(self.level, self.tree, self.unread, data)
+
+    def _shape_node(self, number):
+        return [n for n in self.tree.children if n.identifier == b"REBSHAPE"][number - 1]
+
+    def test_unchanged_unread_parts_pass(self):
+        self._check(self.level)
+        changed = bytearray(self.level)
+        first = self._shape_node(1)
+        vertices = next(c for c in first.children if c.identifier == b"SHPRAWVT")
+        struct.pack_into("<i", changed, vertices.offset + 12, 5)      # a readable shape edited: allowed
+        self._check(bytes(changed))
+
+    def test_a_write_inside_an_unread_part_is_refused(self):
+        changed = bytearray(self.level)
+        bad = self._shape_node(2)
+        vertices = next(c for c in bad.children if c.identifier == b"SHPRAWVT")
+        struct.pack_into("<i", changed, vertices.offset + 12, 7)
+        with self.assertRaisesRegex(ValueError, "would change shape 2 of the level, which can't be read"):
+            self._check(bytes(changed))
+
+    def test_making_a_readable_part_unreadable_is_refused(self):
+        changed = bytearray(self.level)
+        good = self._shape_node(1)
+        polygons = next(c for c in good.children if c.identifier == b"SHPPOLYS")
+        struct.pack_into("<i", changed, polygons.offset + 12 + 16, 0x7fffffff)
+        with self.assertRaisesRegex(ValueError, "would make shape 1 of the level unreadable"):
+            self._check(bytes(changed))
+
+
+class TestLogSafety(unittest.TestCase):
+    def test_names_are_one_plain_line_and_capped(self):
+        from avp_blender_plugin.import_report import MAX_NAME, _safe
+        cleaned = _safe("bad\r\nname\twith\x07bell" + "x" * 1000)
+        self.assertNotIn("\n", cleaned)
+        self.assertNotIn("\r", cleaned)
+        self.assertNotIn("\t", cleaned)
+        self.assertNotIn("\x07", cleaned)
+        self.assertLessEqual(len(cleaned), MAX_NAME)
+
+    def test_the_log_is_never_written_through_a_link(self):
+        import os
+        import tempfile
+        from avp_blender_plugin import import_report
+        with tempfile.TemporaryDirectory() as folder:
+            target = os.path.join(folder, "elsewhere.txt")
+            with open(target, "w", encoding="utf-8") as stream:
+                stream.write("untouched")
+            link = os.path.join(folder, "level-import-log.txt")
+            try:
+                os.symlink(target, link)
+            except (OSError, NotImplementedError):
+                self.skipTest("this system does not let the test make a symbolic link")
+            with unittest.mock.patch.object(import_report, "session_log_path", return_value=None):
+                written = import_report._write_log(os.path.join(folder, "level.rif"), ["line"])
+            self.assertEqual(written, "")
+            with open(target, encoding="utf-8") as stream:
+                self.assertEqual(stream.read(), "untouched")
 
 
 class TestReportLines(unittest.TestCase):

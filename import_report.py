@@ -18,15 +18,24 @@ from .session_log import report as _report
 from .utils import log
 
 MAX_SHOWN = 30
+MAX_NAME = 256
 KEPT = "It's kept unchanged and saved as it was, but can't be edited here."
+
+
+def _safe(text):
+    """A name or reason from the level (hostile input) as one plain line: control characters, CR, LF and tabs made "?",
+    and at most MAX_NAME characters."""
+    from .session_log import _clean
+    cleaned = _clean(text).replace("\n", "?").replace("\t", "?")
+    return cleaned if len(cleaned) <= MAX_NAME else cleaned[:MAX_NAME - 3] + "..."
 
 
 def lines_for(failures):
     """One sentence per failed item, in the owner's words: what, why, and that it is kept."""
     out = []
     for item in failures:
-        kind, name, reason = item["kind"], item["name"], item["reason"]
-        users = item.get("users") or []
+        kind, name, reason = _safe(item["kind"]), _safe(item["name"]), _safe(item["reason"])
+        users = [_safe(user) for user in item.get("users") or []]
         used = f" (used by {', '.join(users[:6])}{' and more' if len(users) > 6 else ''})" if users else ""
         if kind in ("texture", "bitmap"):
             out.append(f"Map could not load {kind} {name}{used}: {reason}. A magenta placeholder material stands in. {KEPT}")
@@ -42,7 +51,7 @@ def _write_log(rif_path, lines):
     stem = os.path.splitext(os.path.basename(rif_path))[0]
     text = "\n".join([
         f"AVP_BlenderPlugin {__version_str__} import log",
-        f"Level: {os.path.abspath(rif_path)}",
+        f"Level: {_safe(os.path.abspath(rif_path))}",
         f"Time: {time.strftime('%Y-%m-%d %H:%M:%S')}",
         f"Items not loaded: {len(lines)}",
         "",
@@ -52,13 +61,36 @@ def _write_log(rif_path, lines):
     if session:
         candidates.append(os.path.join(os.path.dirname(session), f"{stem}-import-log.txt"))
     for candidate in candidates:
+        if _is_link(candidate):
+            log.warning("Import log not written to %s: it is a link", candidate)
+            continue
+        temporary = None
         try:
-            with open(candidate, "w", encoding="utf-8", newline="\n") as stream:
+            # a whole file or none: written beside the target under a new random name ("x": it must not exist yet), then
+            # swapped in. (Not tempfile: NamedTemporaryFile reports an open of the folder itself.)
+            name = os.path.join(os.path.dirname(candidate), f".avp-import-log-{os.getpid()}-{os.urandom(6).hex()}.tmp")
+            with open(name, "x", encoding="utf-8", newline="\n") as stream:
+                temporary = name
                 stream.write(text)
+            if _is_link(candidate):
+                raise OSError("the log path became a link")
+            os.replace(temporary, candidate)
+            temporary = None
             return candidate
         except OSError as error:
             log.warning("Import log not written to %s: %s", candidate, error)
+        finally:
+            if temporary is not None and os.path.exists(temporary):
+                os.unlink(temporary)
     return ""
+
+
+def _is_link(path):
+    """A symbolic link or a Windows junction at `path`: the log is never written through one."""
+    try:
+        return os.path.islink(path) or bool(getattr(os.path, "isjunction", lambda p: False)(path))
+    except OSError:
+        return True
 
 
 def finish(operator, context, rif_path, failures):

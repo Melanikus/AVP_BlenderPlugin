@@ -412,6 +412,7 @@ def export_bytes(scene, text):
     """The bytes to save: one module vertex, stored module UVs and RIM texture picks (together, any of them), or new geometry on its own."""
     from .light_export import plan_lights
     from .session_log import write
+    _checked_source(text)   # before any edit is read
     plan = plan_lights(scene, text)
     data = _export(scene, text, plan)[0]
     if plan.skipped:
@@ -424,14 +425,17 @@ def export_bytes(scene, text):
 @reader_boundary("REBINFF2 export")
 def _export(scene, text, light_plan=None):
     """Returns the bytes and the module objects whose edits they hold (the ones that need their snapshot refreshed afterwards)."""
-    original, tree, record = source_from_text(text)
-    def finish(data, objects):
-        from .texture_import import apply_bitmap_names
-        return apply_bitmap_names(text, data), objects
-    # Parts of the source the reader can't read are left as they are (their bytes are copied through unchanged); an
-    # export may never make another part unreadable (checked on the result below).
+    original, tree, record = _checked_source(text)
+    # Parts of the source the reader can't read are left as they are (their bytes are copied through unchanged); the bytes
+    # saved are checked last, after every writer (vertex, UV, texture, door, light and field edits, bitmap names), so no
+    # path can write inside such a part or make another part unreadable.
     unread_before = []
     source_scan = read_level(original, skipped=unread_before)
+    def finish(data, objects):
+        from .texture_import import apply_bitmap_names
+        saved = apply_bitmap_names(text, data)
+        _check_unread_kept(original, tree, unread_before, saved)
+        return saved, objects
     # the chunks the reader named ("shape N" / "object N": the Nth REBSHAPE / RBOBJECT of the level)
     order = {kind: [n.offset for n in tree.children or () if n.identifier == ident]
              for kind, ident in (("shape", b"REBSHAPE"), ("object", b"RBOBJECT"))}
@@ -710,12 +714,7 @@ def _export(scene, text, light_plan=None):
         raise ValueError("Export new geometry and a moved centre separately from vertex, UV and texture edits; undo one edit family first")
     from .raw_rif import replace_payloads
     decoded = replace_payloads(bytes(result), tree, additions, prepend) if additions or prepend else bytes(result)
-    unread_after = []
-    scan = read_level(decoded, skipped=unread_after)
-    newly = [item for item in unread_after if (item["name"], item["reason"]) not in
-             {(old["name"], old["reason"]) for old in unread_before}]
-    if newly:
-        raise ValueError(f"The export would make {newly[0]['name']} unreadable ({newly[0]['reason']}); nothing was saved")
+    scan = read_level(decoded, skipped=[])   # the saved bytes' own check is _check_unread_kept, in finish()
     if recentred:
         header, position, label, shift = recentred[0]
         _check_scaled_bounds(decoded, header, position, scan.environment_scale)
@@ -729,16 +728,73 @@ def _export(scene, text, light_plan=None):
         return finish(decoded, edited_objects)
     if uv_writes or texture_writes or additions or prepend or morph_writes or light_plan.changed or record.get("custom_textures"):
         return finish(decoded, edited_objects)
+    # No edits: the file as it came (its compressed copy, checked against the source in _checked_source), or the source
+    raw_file = _stored_compressed(record, original)
+    return (raw_file if raw_file is not None else original), []
+
+
+def _stored_compressed(record, original):
+    """The stored compressed original, or None without one; refused when it is out of bounds or decodes to anything but `original`."""
     encoded_file = record.get("compressed_file")
-    if encoded_file is not None:
-        raw_file = base64.b64decode("".join(encoded_file), validate=True)
-        if not 12 <= len(raw_file) <= MAX_RIF_BYTES:
-            raise ValueError("Preserved compressed file exceeds bounds")
-        from .rif_loader import load_rif_auto
-        if load_rif_auto(raw_file) != original:
-            raise ValueError("Preserved compressed file disagrees with decoded source")
-        return raw_file, []
-    return original, []
+    if encoded_file is None:
+        return None
+    raw_file = base64.b64decode("".join(encoded_file), validate=True)
+    if not 12 <= len(raw_file) <= MAX_RIF_BYTES:
+        raise ValueError("Preserved compressed file exceeds bounds")
+    from .rif_loader import load_rif_auto
+    if load_rif_auto(raw_file) != original:
+        raise ValueError("Preserved compressed file disagrees with decoded source")
+    return raw_file
+
+
+def _checked_source(text):
+    """The stored source, checked before anything else of an export runs (light and field edits included): its digest, its
+    framing and size bounds (source_from_text: read_tree, MAX_RIF_BYTES), and its stored compressed copy. Every byte an
+    export passes through comes from this source."""
+    original, tree, record = source_from_text(text)
+    _stored_compressed(record, original)
+    return original, tree, record
+
+
+def _part_index(item):
+    """("shape" | "object", n) for a part the reader named "shape n of the level" / "object n of the level"; None otherwise."""
+    kind, _, rest = str(item.get("name", "")).partition(" ")
+    number = rest.split(" ", 1)[0]
+    if kind in ("shape", "object") and number.isdigit() and int(number) > 0:
+        return kind, int(number)
+    return None
+
+
+def _top_parts(tree):
+    return {kind: [node for node in tree.children or () if node.identifier == ident]
+            for kind, ident in (("shape", b"REBSHAPE"), ("object", b"RBOBJECT"))}
+
+
+def _check_unread_kept(original, tree, unread_before, data):
+    """The saved bytes' last check: every part the reader could not read is in them exactly as it was, byte for byte, at its
+    place among the level's shapes and objects, and no other part became unreadable. Anything else refuses the export."""
+    if data == original:
+        return
+    from .raw_rif import read_tree
+    from .rif_loader import load_rif_auto
+    decoded = data if data[:8] == b"REBINFF2" else load_rif_auto(data)
+    if decoded is None:
+        raise ValueError("The saved level could not be read back; nothing was saved")
+    saved_tree = read_tree(decoded)
+    before, after = _top_parts(tree), _top_parts(saved_tree)
+    unread = {_part_index(item): item for item in unread_before if _part_index(item) is not None}
+    for (kind, number), item in unread.items():
+        if number > len(before[kind]):
+            continue
+        old = before[kind][number - 1]
+        new = after[kind][number - 1] if len(after[kind]) == len(before[kind]) else None
+        if new is None or decoded[new.offset:new.offset + new.size] != original[old.offset:old.offset + old.size]:
+            raise ValueError(f"The export would change {item['name']}, which can't be read; nothing was saved")
+    unread_after = []
+    read_level(decoded, skipped=unread_after)
+    for item in unread_after:
+        if _part_index(item) not in unread:
+            raise ValueError(f"The export would make {item['name']} unreadable ({item['reason']}); nothing was saved")
 
 
 def suggested_export_path(source_path):
@@ -857,6 +913,7 @@ class EXPORT_OT_avp_blender_plugin(bpy.types.Operator):
             if restore_edit_mode:
                 bpy.ops.object.mode_set(mode='OBJECT')
             from .light_export import plan_lights, finish_light_export
+            _checked_source(text)   # before any edit is read
             light_plan = plan_lights(context.scene, text)
             custom_textures = bool(source_from_text(text)[2].get("custom_textures"))
             data, edited = _export(context.scene, text, light_plan)

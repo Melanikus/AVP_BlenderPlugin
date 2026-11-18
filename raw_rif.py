@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Bounded, ordered RIF preservation inside Blender; no import-time files."""
+"""Bounded, ordered RIF preservation inside Blender. The one file an import writes is <level>-import-log.txt, and only when
+something could not be loaded (import_report.py); the level itself is never written by an import."""
 
 import base64
 from dataclasses import dataclass
