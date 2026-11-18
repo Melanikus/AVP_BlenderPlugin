@@ -451,10 +451,15 @@ These are shown but never written to a `.rif` file:
 
 - This version does not yet confirm that the game loads edited levels. Work
   on copies of your game files.
-- 44 of the 63 stock levels import. 17 others stop at a SADAR weapon
-  pickup (`sadar0` or `sadar1`, "bitmap 2 not found"), mostly multiplayer
-  levels. Base and E3demoSP stop because a lift uses `liftmtl.rim`, a
-  texture the game does not ship.
+- Every stock level imports (all 63). What an import can't load is named
+  in red in Blender, one line per item, and in `<level>-import-log.txt`
+  beside the level: a texture or bitmap that isn't there gets a magenta
+  placeholder named after it, and a part that can't be read is left out
+  of the scene. Both stay in the level as they were and are saved
+  unchanged; they can't be edited in Blender. In the stock levels these are
+  the SADAR pickup's bitmap 2 (missing from `SADAR.rif` itself; the game
+  draws those faces untextured too) and, in Base and E3demoSP, the lift
+  texture `LiftMtl.RIM` in a folder the game doesn't ship.
 - An edited level is saved uncompressed.
 - Only ordinary modules, the vertices of morphing doors and imported lights
   can be edited for export, within the rules above.

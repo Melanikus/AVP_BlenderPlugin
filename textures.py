@@ -66,6 +66,7 @@ class TextureStats:
     missing: int = 0          # nothing matched
     ambiguous_examples: list = field(default_factory=list)
     missing_examples: list = field(default_factory=list)
+    failures: list = field(default_factory=list)   # placeholders stood in: {kind, name, reason, users}
     _seen: set = field(default_factory=set)
 
     @property
@@ -94,6 +95,16 @@ class TextureStats:
         self.missing += 1
         if len(self.missing_examples) < 8:
             self.missing_examples.append(f"{raw or name or '?'}")
+
+    def record_failure(self, kind: str, name: str, reason: str, user: str) -> None:
+        """Remember a texture or bitmap the import stood a placeholder in for: once per (kind, name), with every object that uses it."""
+        for item in self.failures:
+            if item["kind"] == kind and item["name"] == name:
+                if user and user not in item["users"] and len(item["users"]) < 64:
+                    item["users"].append(user)
+                return
+        if len(self.failures) < 4096:
+            self.failures.append({"kind": kind, "name": name, "reason": reason, "users": [user] if user else []})
 
 
 # ---------------------------------------------------------------------------

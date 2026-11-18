@@ -151,19 +151,21 @@ def retain_source(scene, collection, raw, tree, filepath, scale, include_markers
         record["compressed_file"] = [compressed[i:i + 256] for i in range(0, len(compressed), 256)]
     shapes = {}
     objects = []
+    # A shape or object that can't be associated is not imported (the reader named it); its bytes stay in the source and
+    # are written back unchanged. Objects keep their place in `objects`, because placement_index is their position.
     for node in tree.children or ():
         if node.identifier == b"REBSHAPE":
             heads = [c for c in node.children or () if c.identifier == b"SHPHEAD1"]
             if len(heads) != 1 or heads[0].size < 36:
-                raise ValueError("Cannot associate preserved shape without SHPHEAD1")
+                continue
             shape_id = struct.unpack_from("<i", raw, heads[0].offset + 32)[0]
-            if shape_id in shapes:
-                raise ValueError(f"Duplicate preserved shape ID {shape_id}")
-            shapes[shape_id] = node.offset
+            # Two shapes with one number: which one an object means is ambiguous, so neither is linked for editing
+            shapes[shape_id] = None if shape_id in shapes else node.offset
         elif node.identifier == b"RBOBJECT":
             heads = [c for c in node.children or () if c.identifier == b"OBJHEAD1"]
             if len(heads) != 1 or heads[0].size < 72:
-                raise ValueError("Cannot associate preserved object without OBJHEAD1")
+                objects.append((node.offset, None))
+                continue
             shape_id = struct.unpack_from("<i", raw, heads[0].offset + 68)[0]
             objects.append((node.offset, shape_id))
     from .vertex_export import baseline
@@ -198,7 +200,8 @@ def retain_source(scene, collection, raw, tree, filepath, scale, include_markers
             if shape_id not in shapes:
                 raise ValueError(f"{obj.name}: missing preserved shape {shape_id}")
             obj["avp_blender_plugin_object_chunk_offset"] = object_offset
-            obj["avp_blender_plugin_shape_chunk_offset"] = shapes[shape_id]
+            if shapes[shape_id] is not None:   # None: two shapes share the number; shown, but not linked for editing
+                obj["avp_blender_plugin_shape_chunk_offset"] = shapes[shape_id]
     if include_markers:
         from .avp_fields import game_marker, classify
         marker_nodes = [child for parent in walk_tree(tree) for child in parent.children or ()

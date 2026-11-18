@@ -94,6 +94,9 @@ from .avp_lighting import import_source_lights
 # per polygon from the size of the texture it uses (see geometry.py).
 _UV_INT16 = False        # always float
 _USE_ROTATION = True     # always apply rotation
+# The Steam install of Aliens versus Predator Classic: its Tools\shape_rifs holds the linked pickup and weapon shapes.
+# Only read, and only when it exists.
+STEAM_AVP = r"C:\Program Files (x86)\Steam\steamapps\common\Aliens versus Predator Classic"
 
 
 class IMPORT_OT_avp_blender_plugin(bpy.types.Operator):
@@ -119,6 +122,10 @@ class IMPORT_OT_avp_blender_plugin(bpy.types.Operator):
     game_data: bpy.props.StringProperty(
         name="Game Data", subtype='DIR_PATH',
         description="Game data copy containing fastfile or graphics; blank discovers it beside the RIF")
+    shape_rifs_folder: bpy.props.StringProperty(
+        name="Shape RIFs", subtype='DIR_PATH',
+        description="Folder of the linked pickup and weapon shape RIFs (the game's Tools\\shape_rifs, such as SADAR.rif). "
+                    "Blank looks beside the level, then in the game data's Tools\\shape_rifs")
     mvp_only: bpy.props.BoolProperty(
         name="Strict Level Import", default=True,
         description="Validated geometry, textures and optional native lights; skips legacy animation and marker stages")
@@ -406,7 +413,9 @@ class IMPORT_OT_avp_blender_plugin(bpy.types.Operator):
             import_materials=self.import_materials,
             fallback_level_name=base,
         )
-        scan = read_level(decoded) if self.mvp_only else scanner.scan(decoded)
+        # An unreadable shape or object never stops the import: it is named and left out, its bytes kept as they were
+        unread_parts = []
+        scan = read_level(decoded, skipped=unread_parts) if self.mvp_only else scanner.scan(decoded)
         raw_tree = read_tree(decoded)
 
         if self.diagnostics_mode:
@@ -422,9 +431,19 @@ class IMPORT_OT_avp_blender_plugin(bpy.types.Operator):
         log.info(f"Created collection: {cols['__main__'].name}")
 
         tex_stats = TextureStats()
+        tex_stats.failures.extend(unread_parts)
+        game_root = None
         if self.import_materials:
             t = time.perf_counter()
-            tex_idx = MemoryTextures(find_game_root(self.filepath, self.game_data))
+            try:
+                game_root = find_game_root(self.filepath, self.game_data)
+            except ValueError as error:
+                # A map shared on its own has no game data beside it: it still imports, every texture a named
+                # placeholder (loose graphics\ files beside the RIF are still found), and the import says so.
+                game_root = os.path.dirname(os.path.abspath(self.filepath))
+                tex_stats.record_failure("game data", self.game_data or "(beside the level)",
+                                         f"{error}; textures are looked up beside the level only", "")
+            tex_idx = MemoryTextures(game_root)
             dt_tex = time.perf_counter() - t
             log.info(f"Textures: {len(tex_idx.entries)} archive path(s) "
                      f"({dt_tex*1000:.0f} ms)")
@@ -436,8 +455,19 @@ class IMPORT_OT_avp_blender_plugin(bpy.types.Operator):
             log.info("Textures: (skipped - no _ffl_unpacked directory found)")
 
         rif_dirs: list[str] = []
+        # Linked shape RIFs (pickups, weapons): the folder set here, then one beside the level, then the game's own
+        # Tools\shape_rifs (inteng's ShapeFolder), so the level's linked shapes find their bitmaps.
+        if self.shape_rifs_folder:
+            if os.path.isdir(self.shape_rifs_folder):
+                rif_dirs.append(self.shape_rifs_folder)
+            else:
+                tex_stats.record_failure("shape RIF folder", self.shape_rifs_folder, "the folder does not exist", "")
         if discovered.shape_rifs:
             rif_dirs.append(discovered.shape_rifs)
+        for root in (game_root, self.game_data, STEAM_AVP):
+            candidate = os.path.join(root, "Tools", "shape_rifs") if root else ""
+            if candidate and os.path.isdir(candidate):
+                rif_dirs.append(candidate)
         rif_dirs.append(os.path.dirname(os.path.abspath(self.filepath)))
         seen_dirs: set[str] = set()
         rif_dirs = [d for d in rif_dirs
@@ -460,7 +490,10 @@ class IMPORT_OT_avp_blender_plugin(bpy.types.Operator):
             mat_cache={}, matchimg_index=scan.matchimg_index,
             rif_index=rif_index, ext_cache={}, ext_stats=ext_stats,
             pivot_mode=PivotMode(self.pivot_mode),
-            ext_strategy=ExtRifStrategy(self.ext_rif_strategy),
+            # The editable import draws the level's own copy of a linked shape (what the game draws and what saving
+            # edits); the linked shape RIF only supplies the bitmaps the copy lacks.
+            ext_strategy=(ExtRifStrategy.PREFER_PLACEHOLDER if self.mvp_only
+                          else ExtRifStrategy(self.ext_rif_strategy)),
             use_rotation=_USE_ROTATION,
             clrlookp_table=scan.clrlookp_table,
             orphan_mode=OrphanMode(self.orphan_mode),
@@ -534,6 +567,8 @@ class IMPORT_OT_avp_blender_plugin(bpy.types.Operator):
                 _report(self, {'INFO'}, f"Imported {counters.lights} native AvP light(s); Blender power is approximate; "
                         "AvP light moves/fields export, without rebaking")
             print_summary(self, scan, state, counters, ctx)
+            from .import_report import finish as report_not_loaded
+            report_not_loaded(self, context, self.filepath, tex_stats.failures)
             visible_views = 0
             if context.window is not None:
                 for area in context.window.screen.areas:

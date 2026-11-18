@@ -428,7 +428,19 @@ def _export(scene, text, light_plan=None):
     def finish(data, objects):
         from .texture_import import apply_bitmap_names
         return apply_bitmap_names(text, data), objects
-    source_scan = read_level(original)
+    # Parts of the source the reader can't read are left as they are (their bytes are copied through unchanged); an
+    # export may never make another part unreadable (checked on the result below).
+    unread_before = []
+    source_scan = read_level(original, skipped=unread_before)
+    # the chunks the reader named ("shape N" / "object N": the Nth REBSHAPE / RBOBJECT of the level)
+    order = {kind: [n.offset for n in tree.children or () if n.identifier == ident]
+             for kind, ident in (("shape", b"REBSHAPE"), ("object", b"RBOBJECT"))}
+    unread_shapes, unread_objects = set(), set()
+    for item in unread_before:
+        kind, _, number = item["name"].partition(" ")
+        number = number.split(" ", 1)[0]
+        if kind in order and number.isdigit() and 0 < int(number) <= len(order[kind]):
+            (unread_shapes if kind == "shape" else unread_objects).add(order[kind][int(number) - 1])
     from .light_export import plan_lights
     if light_plan is None:
         light_plan = plan_lights(scene, text, original, tree, record)
@@ -579,6 +591,10 @@ def _export(scene, text, light_plan=None):
         if len(initial) != len(current) and not growing:
             raise ValueError(f"{obj.name}: vertex count changed")
         object_node = nodes[offset]
+        if obj.get("avp_blender_plugin_shape_chunk_offset") in unread_shapes or offset in unread_objects:
+            # never edit what can't be read: its bytes are copied through as they were
+            light_plan.skipped.append(f"{obj.name}: its level data can't be read, so it is kept unchanged and saved as it was")
+            continue
         door_shape = nodes.get(obj.get("avp_blender_plugin_shape_chunk_offset"))
         if (door_shape is not None and door_shape.identifier == b"REBSHAPE" and door_morph.morph_container(door_shape) is not None
                 and door_morph.is_module(original, object_node)):
@@ -694,7 +710,12 @@ def _export(scene, text, light_plan=None):
         raise ValueError("Export new geometry and a moved centre separately from vertex, UV and texture edits; undo one edit family first")
     from .raw_rif import replace_payloads
     decoded = replace_payloads(bytes(result), tree, additions, prepend) if additions or prepend else bytes(result)
-    scan = read_level(decoded)
+    unread_after = []
+    scan = read_level(decoded, skipped=unread_after)
+    newly = [item for item in unread_after if (item["name"], item["reason"]) not in
+             {(old["name"], old["reason"]) for old in unread_before}]
+    if newly:
+        raise ValueError(f"The export would make {newly[0]['name']} unreadable ({newly[0]['reason']}); nothing was saved")
     if recentred:
         header, position, label, shift = recentred[0]
         _check_scaled_bounds(decoded, header, position, scan.environment_scale)

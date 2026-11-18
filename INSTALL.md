@@ -236,7 +236,8 @@ needs the option it depends on turned on.
 | **Use MATCHIMG** | On | Applies the level's texture swap rules (`MATCHIMG`). Works in the legacy import only; no effect with **Strict Level Import** on. |
 | **Use CLRLOOKP** | On | Tints polygons without a texture with the level's colour table (`CLRLOOKP`). Works in the legacy import only. With **Strict Level Import** on, those polygons are magenta. |
 | **Backface Culling** | On | Hides the back of every face, like the game. Without it, helper geometry that is invisible in the game shows through walls. Turn it off to inspect that geometry. It affects Material Preview and Eevee renders only; Cycles ignores it. |
-| **Game Data** | blank | The folder that contains `fastfile` or `graphics`. When blank, the add-on looks in the level's folder and in up to four folders above it. Used only while **Import Materials** is on. |
+| **Game Data** | blank | The folder that contains `fastfile` or `graphics`. When blank, the add-on looks in the level's folder and in up to four folders above it. Used only while **Import Materials** is on. If none is found, the level still imports, every texture a named placeholder. |
+| **Shape RIFs** | blank | The folder of the pickup and weapon shapes a level links to, such as `SADAR.rif` (the game's `Tools\shape_rifs`). When blank, the add-on looks beside the level, then in the game data's `Tools\shape_rifs`, then in Steam's Aliens versus Predator Classic folder. The level's own copy of a linked shape is what is drawn; the linked file supplies the bitmaps the copy lacks. |
 
 ### Data, Animation and Debug (Strict Level Import off)
 
@@ -919,16 +920,18 @@ is in Blender's system console, and the messages and errors are also in the
 
 | You see | What it means | What to do |
 |---|---|---|
-| **Select Game Data directory containing fastfile or graphics** | No `fastfile` or `graphics` folder in the level's folder or in the four folders above it. | Set **Game Data** to the folder that contains `fastfile` or `graphics`, or turn **Import Materials** off for geometry only. |
-| **Game data directory not found: `<path>`** | The folder in **Game Data** doesn't exist. | Correct the path or clear it. |
-| The system console shows **Shape RIFs: (not found)** | No `shape_rifs` folder was found, so shapes that the level borrows from other `.rif` files fall back to the level's own stand-in shapes. | Put `shape_rifs` in the level's folder or in one of the four folders above it. **Mark Missing SHPEXTFL** marks each borrowed shape that was not found. |
+| **Map could not load the game data `<folder>`: ... textures are looked up beside the level only** | No `fastfile` or `graphics` folder in the level's folder or in the four folders above it, or the folder in **Game Data** doesn't exist. The level imports; every texture is a placeholder. | Set **Game Data** to the folder that contains `fastfile` or `graphics`, and import again. |
+| The system console shows **Shape RIFs: (not found)** | No `shape_rifs` folder was found beside the level, so the level's own copies of linked shapes are drawn, and a bitmap only the linked file has gets a placeholder. | Set **Shape RIFs** to the game's `Tools\shape_rifs`. **Mark Missing SHPEXTFL** marks each borrowed shape that was not found. |
 
-### Textures
+### What the import could not load
+
+A level always imports. Whatever it can't load is named in red in Blender, one line per item, and in **`<level>-import-log.txt`** beside the level (or beside the session log when that folder can't be written); the report names the file. Each item is kept in the level exactly as it was and saved unchanged.
 
 | You see | What it means | What to do |
 |---|---|---|
-| **Object `<name>`: Texture not found: graphics/`<path>`** | The level uses a texture that your game data doesn't have. | Check that **Game Data**, or the folder found next to the level, is your game folder. Or turn **Import Materials** off. |
-| **Polygon `<n>`: bitmap `<m>` not found** | A polygon uses a texture number that is missing from the level's texture list. | Import with **Import Materials** off. |
+| **Map could not load texture `<path>` (used by ...): Texture not found ...** | The level names a texture your game data doesn't have (common for a map shared on its own). A magenta material named `<level>_MISSING_<file>` stands in. | Point **Game Data** at the folder that has it, or give the faces a texture with the texture picker. The saved level keeps the original texture name unless you change it. |
+| **Map could not load bitmap `bitmap <n>` (used by ...): the shape's bitmap list has no entry `<n>`** | A polygon uses a texture number its shape's list doesn't have (the stock SADAR pickup's bitmap 2 is one: even `SADAR.rif` lacks it; the game draws those faces untextured). A magenta placeholder stands in. | Nothing, or give the faces a texture. |
+| **Map could not load shape `<n>` of the level / object `<n>` of the level: `<reason>`** | That part of the level can't be read. It is not in the scene. | Nothing: it is saved exactly as it was. It can't be edited in Blender. |
 | **Invalid game texture path: `<path>`** | A texture path in the level, or a file name inside one of the archives in `fastfile`, is not valid. | Import with **Import Materials** off. If it happens with every level, one of the files in `fastfile` is the cause. |
 | **Ignoring non-RFFL file, as the game does: `<file>`** (console) | A file ending in `.ffl` in `fastfile` is not a game archive. It is skipped, as the game does. | Nothing. |
 | Some faces are magenta | Those polygons have no texture. | Nothing; that is how the default import shows them. |

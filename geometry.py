@@ -44,6 +44,8 @@ _STRUCT_I    = struct.Struct("<i")
 # Fallback texture size when the bitmap cannot be resolved to a file. The
 # retail levels use 128x128 level textures almost exclusively.
 DEFAULT_TEX_SIZE = 128.0
+# A texture the import could not have: a bright magenta, so the mapper sees at once what to replace
+MISSING_COLOUR = (1.0, 0.0, 1.0, 1.0)
 TILED_FACE_ATTRIBUTE = "avp_blender_plugin_tiled"
 
 # PNG dimensions, keyed by absolute path; the same file is queried once
@@ -243,8 +245,14 @@ def build_mesh(shape: ShapeGroup, base, name, scale, bitmaps, tex_index,
                 raise ValueError(f"Polygon {poly['poly_idx']}: too few UV corners")
         if import_materials:
             entry = bitmaps.get(bmp_idx) if bitmaps and textured else None
+            # A texture that can't be had never stops the import: the game itself draws such a polygon untextured
+            # (chunk_load.cpp copy_to_shapeheader: a bitmap number past the shape's list, or a texture that did not
+            # load, becomes an unlit flat polygon). Here it gets a named placeholder material, the level keeps its
+            # original reference, and the import names it (tex_stats.failures, the red message and the log).
+            missing = None
             if textured and entry is None:
-                raise ValueError(f"Polygon {poly['poly_idx']}: bitmap {bmp_idx} not found")
+                missing = ("bitmap", f"bitmap {bmp_idx}",
+                           f"the shape's bitmap list has no entry {bmp_idx}")
             tex_base = entry.name if entry is not None else None
             tex_raw = entry.raw_name if entry is not None else ""
             if tex_base:
@@ -267,15 +275,25 @@ def build_mesh(shape: ShapeGroup, base, name, scale, bitmaps, tex_index,
                                    ((ci >> 5) & 0x1F) / CLRLOOKP_MAX,
                                    ((ci >> 10) & 0x1F) / CLRLOOKP_MAX, 1.0)
 
-            res = (resolve_texture(tex_index, tex_base, tex_raw, level_hint,
-                                   tex_stats)
-                   if tex_base else None)
+            res = None
+            if tex_base and missing is None:
+                try:
+                    res = resolve_texture(tex_index, tex_base, tex_raw, level_hint,
+                                          tex_stats)
+                except ValueError as error:
+                    missing = ("texture", tex_raw or tex_base, str(error))
             png = res.png if res else None
             image = res.image if res else None
 
             # Material identity comes from the texture's path, so two
             # textures sharing a file name never share a material.
-            if res and res.source_path:
+            if missing is not None:
+                label = missing[1].replace("\\", "/").rsplit("/", 1)[-1].replace(" ", "")
+                mat_name = f"{base}_MISSING_{label}"
+                debug_color = MISSING_COLOUR
+                if tex_stats is not None:
+                    tex_stats.record_failure(missing[0], missing[1], missing[2], name)
+            elif res and res.source_path:
                 mat_name = material_name(base, res.source_path, tex_base or "")
             else:
                 mat_name = (f"{base}_{tex_base}" if tex_base
@@ -293,6 +311,9 @@ def build_mesh(shape: ShapeGroup, base, name, scale, bitmaps, tex_index,
                                      cull_backfaces=cull_backfaces,
                                      tex_path=res.source_path if res else "",
                                      image=image)
+                if missing is not None:
+                    # what the mapper replaces: the reference the level holds, kept unchanged on save
+                    m["avp_blender_plugin_missing_texture"] = missing[1]
                 if mat_timing is not None:
                     mat_timing[0] += time.perf_counter() - _t_mat
                 mat_lookup[mat_name] = len(mat_names)

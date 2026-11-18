@@ -50,6 +50,12 @@ from .utils import log, apply_axis
 _R_AXIS_MAT3 = Matrix.Rotation(-math.pi / 2.0, 3, 'X')
 
 
+def _record_part(ctx, oh, index, reason):
+    """Name an object the import left out (the red message and the import log): its bytes are kept and saved unchanged."""
+    if ctx.tex_stats is not None and hasattr(ctx.tex_stats, "record_failure"):
+        ctx.tex_stats.record_failure("part", f"object {oh.tag or index + 1}", reason, "")
+
+
 def run_stage_geometry(scan, ctx, stats, geometry_collection):
     """Import every placement, then orphan shapes; returns sub-timings."""
     shapes = scan.shapes
@@ -80,12 +86,16 @@ def run_stage_geometry(scan, ctx, stats, geometry_collection):
             if use_progress and (i % 8 == 0):
                 wm.progress_update(i)
 
+            if oh.shape_id == -1 and oh.index_num == -1 and not oh.tag:
+                continue   # an object the reader could not read (level_validation.UNREADABLE_OBJECT): already named
             shp_idx = shape_by_id.get(oh.shape_id)
             if shp_idx is None:
+                # Never a stop: the object is left out of the scene and its bytes stay in the level as they were.
                 stats.skipped_no_shape += 1
-                log.debug(f"  [{i:03d}] no shape for "
-                          f"shape_id={oh.shape_id} (tag='{oh.tag}')")
-                raise ValueError(f"Object {oh.tag}: missing shape {oh.shape_id}")
+                log.warning(f"  [{i:03d}] no shape for "
+                            f"shape_id={oh.shape_id} (tag='{oh.tag}')")
+                _record_part(ctx, oh, i, f"its shape {oh.shape_id} could not be read")
+                continue
 
             g = shapes[shp_idx]
             try:
@@ -113,7 +123,9 @@ def run_stage_geometry(scan, ctx, stats, geometry_collection):
                                 f"(shape_id={oh.shape_id}, "
                                 f"tag='{oh.tag}')")
             except (ValueError, RuntimeError, KeyError) as e:
-                raise ValueError(f"Object {oh.tag}: {e}") from e
+                # The object is left out of the scene and named; its bytes stay in the level and are saved as they were.
+                log.warning(f"  [{i:03d}] object '{oh.tag}' not imported: {type(e).__name__}: {e}")
+                _record_part(ctx, oh, i, f"{type(e).__name__}: {e}")
     finally:
         if use_progress:
             wm.progress_end()

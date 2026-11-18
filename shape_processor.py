@@ -147,6 +147,10 @@ class ResolvedShape:
     # with no usable shape). Used by the marker feature regardless of
     # whether the placeholder happened to be a valid fallback.
     ext_missing: bool = False
+    # The linked shape RIF's own bitmap table when the level's copy of the shape is drawn: it fills only the bitmap
+    # numbers the level's tables lack (the SADAR pickup's bitmap 2 lives in Tools\shape_rifs\SADAR.rif), as inteng
+    # follows the link; it never replaces a bitmap the level names itself.
+    ext_fill: dict | None = None
 
 
 def try_infer_position(shape: ShapeGroup, header: ShpHead | None,
@@ -242,7 +246,7 @@ def _resolve_ext_shape(shape: ShapeGroup, ctx: ImportContext,
                           ph_verts)
             ctx.placeholder_fallback_count += 1
         return ResolvedShape(shape, local_bm, None, False, ext_name,
-                             ext_missing=True)
+                             ext_missing=True, ext_fill=ext.get("bitmaps"))
 
     ev = count_verts(ext_shape)
     pv = count_verts(shape)
@@ -267,7 +271,7 @@ def _resolve_ext_shape(shape: ShapeGroup, ctx: ImportContext,
     if ev > 0:
         ctx.placeholder_preferred_count += 1
     return ResolvedShape(shape, local_bm, None, False, ext_name,
-                         ext_missing=False)
+                         ext_missing=False, ext_fill=ext.get("bitmaps"))
 
 
 def _resolve_transform(obj: ObjHead | None, header: ShpHead | None,
@@ -303,6 +307,15 @@ def _effective_bitmaps(res: ResolvedShape, ctx: ImportContext) -> dict:
     # External path never consults bmp_names - different namespace.
     if res.ext_loaded:
         bm = dict(res.ext_bitmaps or {})
+        if res.local_bitmaps:
+            bm.update(res.local_bitmaps)
+        return bm
+
+    # The level's copy of a linked shape, with its shape RIF found: the shape's bitmap numbers are that file's (the
+    # copy's SHPEXTFL list is a subset of it), so the table is the external path's: the shape RIF's, with the copy's own
+    # entries on top. The level's list is another numbering and is not used.
+    if res.ext_fill is not None:
+        bm = dict(res.ext_fill)
         if res.local_bitmaps:
             bm.update(res.local_bitmaps)
         return bm
