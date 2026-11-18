@@ -58,17 +58,38 @@ def scan_script():
     return "\n".join(body) + "\n"
 
 
+def is_windows_linux_launcher(candidate):
+    # Windows ships its own bash.exe that starts the Linux subsystem. It reads paths as /mnt/c/..., not /c/..., so this proof cannot use it.
+    folder = str(Path(candidate).parent).lower().replace("/", "\\")
+    return "\\windows\\system32" in folder or "\\windowsapps" in folder
+
+
 def bash_executable():
-    if os.name == "nt":
-        git = shutil.which("git")
-        candidate = Path(git).parent.parent / "bin" / "bash.exe" if git else None
-        if candidate is not None and candidate.is_file():
-            return str(candidate)
-    else:
+    if os.name != "nt":
         candidate = shutil.which("bash")
         if candidate:
             return candidate
-    raise RuntimeError("The local release proof requires installed Bash")
+        raise RuntimeError("The local release proof requires installed Bash")
+
+    # Windows: Bash from Git for Windows. First the one on PATH, then the folders Git for Windows is usually installed in.
+    # Git's own git.exe can sit one level deeper (Git\cmd, Git\ucrt64\bin, Git\mingw64\bin), so each parent of it is tried too.
+    candidates = [shutil.which("bash")]
+    git = shutil.which("git")
+    if git:
+        for parent in Path(git).resolve().parents[:3]:
+            candidates += [parent / "bin" / "bash.exe", parent / "usr" / "bin" / "bash.exe"]
+    for variable in ("ProgramFiles", "ProgramW6432", "ProgramFiles(x86)"):
+        base = os.environ.get(variable)
+        if base:
+            candidates += [Path(base) / "Git" / "bin" / "bash.exe", Path(base) / "Git" / "usr" / "bin" / "bash.exe"]
+    local = os.environ.get("LOCALAPPDATA")
+    if local:
+        candidates += [Path(local) / "Programs" / "Git" / "bin" / "bash.exe",
+                       Path(local) / "Programs" / "Git" / "usr" / "bin" / "bash.exe"]
+    for candidate in candidates:
+        if candidate and Path(candidate).is_file() and not is_windows_linux_launcher(candidate):
+            return str(candidate)
+    raise RuntimeError("The local release proof requires Bash from Git for Windows (looked on PATH, next to git, and in the usual Git folders)")
 
 
 def python_executable():
