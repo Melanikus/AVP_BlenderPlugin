@@ -1,6 +1,6 @@
 # Feature status
 
-What AVP_BlenderPlugin 1.0.0-alpha.2 does with each part of an Aliens versus
+What AVP_BlenderPlugin 1.0.0-alpha.3 does with each part of an Aliens versus
 Predator level. Words in **bold** are the words on the screen.
 
 The four statuses:

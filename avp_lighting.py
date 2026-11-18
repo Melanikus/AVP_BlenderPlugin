@@ -159,6 +159,8 @@ def import_source_lights(text, collection, geometry, scene, animate):
     for obj in geometry.all_objects:
         if obj.type != 'MESH' or obj.get("avp_blender_plugin_source_text") != text.name:
             continue
+        if obj.get("avp_blender_plugin_pose_target") is not None:
+            continue   # a door's second pose is not a placement of its own
         offset = obj.get("avp_blender_plugin_object_chunk_offset")
         if offset in owners:
             raise ValueError("Placed-light mesh association is ambiguous")

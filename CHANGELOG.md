@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Morph doors as two editable meshes.** Every morphing door, lift door and switch door now imports as the door open
+  and a hidden `<door>_MORPH` mesh closed (the game's SUBSHAPE; the game takes the shape as open and the stored pose as
+  closed, `object_setup.cpp` 1845-1901): the door's faces, UVs and materials with the pose's own vertices. Vertex moves
+  in either mesh export, any number of them, with the normals of the faces they touch and the pose's radius and extents
+  grown to fit. Only the vertex count has to match between the poses, as in the game, which draws the open door's faces
+  in both. **AvP Door Poses** switches between the poses and plays the door between the two meshes as they are now, in
+  the straight line the game uses. Only modules get poses: the game never opens a placed object (stock: 760 morph
+  shapes in 63 levels, one of them on a placed platform lift, odobenus `DoorLift01`).
+- **Make a door from a module.** A copy of a module named `<module>_MORPH`, with the same vertices moved to where the
+  door is closed, exports as the module's morph data: one SUBSHAPE and a FRMMORPH from open to closed, laid out as the
+  stock doors have them. With no strategy the game makes it a proximity door (`object_setup.cpp`
+  `deal_with_module_object`).
 - **A log file for every Blender session.** In the extension's own user folder (`logs`, made by Blender for the add-on), one
   `session-<date>-<time>-<id>.log` per Blender session holds, with the time of each line, every message an operator showed
   you, every warning and error the add-on logged, and the traceback of any operator that failed with an error nobody
@@ -24,6 +36,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Levels whose textures carry a mip-map record import again.** Stock RIMs such as Caverns_A's `falllift` and Vaults'
+  `LIFT01` hold a `LIST MIPM` after the picture. The decoder refused the whole level ("Invalid ILBM container"); like
+  the game's RIM reader (`RimLoader.cpp`), it now reads up to the picture's `BODY` and stops there. A mip-map record
+  before the picture is still refused, and a mapper's own RIM is still checked whole.
 - **Editing goes on after a successful export, without a re-import.** An export compared the objects with a snapshot taken
   at import, so the next edit of another kind was refused until the level was imported again. After a successful export the
   snapshot is now taken again from what was saved (a vertex move, UV moves and texture picks). Exporting new geometry

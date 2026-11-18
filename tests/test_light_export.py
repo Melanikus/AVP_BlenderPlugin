@@ -40,6 +40,8 @@ from avp_blender_plugin.vertex_export import export_bytes
 
 def uv_module(linked, nodes, raw, record):
     for obj in linked:
+        if obj.get("avp_blender_plugin_pose_target") is not None:
+            continue   # a door's closed-pose mesh is in the level but is not a placement of its own
         if obj.type != 'MESH' or classify(nodes[obj["avp_blender_plugin_object_chunk_offset"]], raw) != "module":
             continue
         shape = nodes[obj["avp_blender_plugin_shape_chunk_offset"]]

@@ -79,6 +79,8 @@ def assignment_reason(context):
     obj = context.object
     if obj is None or obj.type != 'MESH' or not obj.get("avp_blender_plugin_source_text"):
         return "Select a mesh imported by AvP"
+    if obj.get("avp_blender_plugin_pose_target") is not None:
+        return "A door's second pose takes the door's faces and textures: pick textures on the door (the first pose)"
     try:
         text, raw, tree, node = object_source(obj, display=True)
         if classify(node, raw) != "module":

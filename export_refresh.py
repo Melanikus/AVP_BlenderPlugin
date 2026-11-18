@@ -58,6 +58,13 @@ def refresh_after_export(text, data, objects, light_plan=None):
         raise ValueError("the preserved source has no module snapshots")
     # Everything that can fail is done before anything is changed
     mappings = {}
+    from .door_morph import PROP_TARGET
+    pose_meshes = [obj for obj in objects if obj.get(PROP_TARGET) is not None]
+    objects = [obj for obj in objects if obj.get(PROP_TARGET) is None]
+    poses = record.get("poses") if isinstance(record.get("poses"), dict) else {}
+    for obj in pose_meshes:
+        if str(obj[PROP_TARGET]) not in poses:
+            raise ValueError(f"{obj.name}: missing preserved pose snapshot")
     for obj in objects:
         offset = obj.get("avp_blender_plugin_object_chunk_offset")
         if not isinstance(offset, int) or str(offset) not in placements:
@@ -86,10 +93,12 @@ def refresh_after_export(text, data, objects, light_plan=None):
         for field in light_plan.preserved_state.get(obj, ()) if light_plan is not None else ():
             fresh[field] = previous[field]
         placements[key] = fresh
+    for obj in pose_meshes:
+        poses[str(obj[PROP_TARGET])] = baseline(obj)
     content = json.dumps(record, indent=0)
     if len(content) > MAX_TEXT_BYTES:
         raise ValueError("the preserved source record would exceed its size bound")
     text.clear()
     text.write(content)
     clear_display_cache()
-    log.info("Export snapshot refreshed: %d module(s) re-taken from the saved file", len(mappings))
+    log.info("Export snapshot refreshed: %d module(s) re-taken from the saved file", len(mappings) + len(pose_meshes))

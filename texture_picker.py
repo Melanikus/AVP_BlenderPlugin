@@ -198,6 +198,8 @@ def assign_texture(context, bitmap):
     obj = context.object
     if obj is None or obj.type != 'MESH':
         raise ValueError("Select an imported module mesh")
+    if obj.get("avp_blender_plugin_pose_target") is not None:
+        raise ValueError("A door's second pose takes the door's faces and textures: pick textures on the door (the first pose)")
     text, raw, tree, node = object_source(obj)
     if classify(node, raw) != "module":
         raise ValueError("The RIM picker currently supports ordinary module polygons only")

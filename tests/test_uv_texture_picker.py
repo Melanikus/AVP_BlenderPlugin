@@ -48,8 +48,10 @@ class UVTextureProof(unittest.TestCase):
         cls.text = next(iter(set(bpy.data.texts) - before))
         cls.raw, tree, record = source_from_text(cls.text)
         nodes = {node.offset: node for node in walk_tree(tree)}
+        # a door's closed-pose mesh is in the level but is not a placement of its own
         objects = [obj for obj in bpy.context.scene.objects if obj.type == 'MESH'
-                   and obj.get("avp_blender_plugin_source_text") == cls.text.name]
+                   and obj.get("avp_blender_plugin_source_text") == cls.text.name
+                   and obj.get("avp_blender_plugin_pose_target") is None]
         for obj in objects:
             node = nodes[obj["avp_blender_plugin_object_chunk_offset"]]
             shape = nodes[obj["avp_blender_plugin_shape_chunk_offset"]]
@@ -342,7 +344,8 @@ class UVRepeatProof(unittest.TestCase):
                          for item in choices["items"])}
         cls.obj = cls.inside_obj = None
         for obj in bpy.context.scene.objects:
-            if obj.type != 'MESH' or obj.get("avp_blender_plugin_source_text") != cls.text.name:
+            if (obj.type != 'MESH' or obj.get("avp_blender_plugin_source_text") != cls.text.name
+                    or obj.get("avp_blender_plugin_pose_target") is not None):
                 continue
             flags = obj.data.attributes[TILED_FACE_ATTRIBUTE]
             layer = obj.data.uv_layers[0]

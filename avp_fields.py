@@ -188,6 +188,9 @@ def object_source(obj, display=False):
         raw, tree, record = source_from_text(text)
     offsets = {node.offset: node for node in walk_tree(tree)}
     offset = obj.get("avp_blender_plugin_data_chunk_offset", obj.get("avp_blender_plugin_object_chunk_offset"))
+    if offset is None and obj.get("avp_blender_plugin_pose_target") is not None:
+        # a door's second pose (door_morph.py) has no chunk of its own: it stands for its door's
+        offset = obj.get("avp_blender_plugin_pose_owner")
     node = offsets.get(offset)
     if node is None:
         raise ValueError(f"{obj.name}: preserved object link is invalid")

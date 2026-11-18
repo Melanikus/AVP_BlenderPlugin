@@ -1,6 +1,6 @@
 # Install and use AVP_BlenderPlugin
 
-This guide covers AVP_BlenderPlugin 1.0.0-alpha.2 on Blender 5.2. Each step says what
+This guide covers AVP_BlenderPlugin 1.0.0-alpha.3 on Blender 5.2. Each step says what
 you should see. Words in **bold** are the words on the screen. A name in
 `<angle brackets>` stands for your own value, for example `<file>` for the
 name of the level file without `.rif`.
@@ -18,6 +18,7 @@ Contents:
 - [What the import creates](#what-the-import-creates)
 - [The AvP panels](#the-avp-panels)
 - [Door previews](#door-previews)
+- [Door poses: open and closed](#door-poses-open-and-closed)
 - [Give faces another texture from the level](#give-faces-another-texture-from-the-level)
 - [Add new faces to a module](#add-new-faces-to-a-module)
 - [Move a vertex](#move-a-vertex)
@@ -47,8 +48,8 @@ Contents:
 
 1. Open the Releases page:
    [github.com/Melanikus/AVP_BlenderPlugin/releases](https://github.com/Melanikus/AVP_BlenderPlugin/releases).
-2. Open the release **AVP_BlenderPlugin v1.0.0-alpha.2**.
-3. Download two files: `avp_blender_plugin-1.0.0-alpha.2.zip` and `SHA256SUMS`.
+2. Open the release **AVP_BlenderPlugin v1.0.0-alpha.3**.
+3. Download two files: `avp_blender_plugin-1.0.0-alpha.3.zip` and `SHA256SUMS`.
 4. Keep the zip as it is. Don't unzip it: Blender installs the zip itself.
 
 Don't use the source-code archives that GitHub adds to every release. They
@@ -62,11 +63,11 @@ hold the whole repository, and they are not the release package.
 2. Run:
 
    ```
-   Get-FileHash .\avp_blender_plugin-1.0.0-alpha.2.zip
+   Get-FileHash .\avp_blender_plugin-1.0.0-alpha.3.zip
    ```
 
 3. Compare the hash it prints with the one in `SHA256SUMS`. The release page
-   also prints it, after **SHA-256 of avp_blender_plugin-1.0.0-alpha.2.zip:**.
+   also prints it, after **SHA-256 of avp_blender_plugin-1.0.0-alpha.3.zip:**.
 
 You should see the same 64 characters. Upper and lower case don't matter. If
 they differ, delete the zip and download it again. On other systems, any
@@ -77,7 +78,7 @@ Two more checks, if you want them:
 - With the GitHub command-line tool, run:
 
   ```
-  gh attestation verify avp_blender_plugin-1.0.0-alpha.2.zip --repo Melanikus/AVP_BlenderPlugin
+  gh attestation verify avp_blender_plugin-1.0.0-alpha.3.zip --repo Melanikus/AVP_BlenderPlugin
   ```
 
   It checks that the file is the one the release run built.
@@ -94,7 +95,7 @@ Two more checks, if you want them:
 4. At the right end of the section's header, open the drop-down menu (the
    small arrow) and choose **Install from Disk...**.
 5. In the file browser, keep **Enable on Install** ticked. Select
-   `avp_blender_plugin-1.0.0-alpha.2.zip` and click **Install from Disk**.
+   `avp_blender_plugin-1.0.0-alpha.3.zip` and click **Install from Disk**.
 
 You should see **AVP_BlenderPlugin** in the Add-ons list, with its checkbox
 ticked. Blender asks for no permission, and no internet connection is needed.
@@ -115,7 +116,7 @@ Blender saves preferences when you close it. If you turned
 
 1. In **Add-ons**, click the arrow to the left of **AVP_BlenderPlugin**.
    - You should see **Type** Extension, **Maintainer** Melanikus,
-     **Version** 1.0.0-alpha.2, and a **File** row with the place where Blender
+     **Version** 1.0.0-alpha.3, and a **File** row with the place where Blender
      stored the add-on.
 2. Open **File > Import**.
    - You should see **AVP_BlenderPlugin RIF (.rif)**.
@@ -487,6 +488,39 @@ another `.blend` file stops it. Messages you may see:
 
 ---
 
+## Door poses: open and closed
+
+Every door, lift door and switch door imports as two meshes: the door open,
+and `<door>_MORPH` closed (hidden). In the panel **AvP Door Poses**:
+
+1. Click **Show closed**. The door hides and `<door>_MORPH` shows, selected.
+   Click **Show open** to go back.
+2. Move vertices of either mesh in Edit Mode.
+3. In Object Mode, click **Play door**. The door goes to the closed pose and
+   back, through the poses as you have edited them.
+   - You should see **Door: `<door>` to `<door>_MORPH` and back, one second
+     each way**.
+4. Export as usual (File > Export).
+
+To make a door from a module: duplicate the module in place, rename the copy
+`<module>_MORPH`, move its vertices to where the door is closed, then export
+on its own. **AvP Door Poses** shows the copy as **(new: the next export adds
+it)** until then.
+
+Messages you may see on export:
+
+| Message | What to do |
+|---|---|
+| **`<door>`: a door pose is being previewed or played; click Base shape first** | Click **Base shape** in **AvP Door** (or let **Play door** finish), then export. |
+| **`<pose>`: was moved, rotated or scaled; a pose is exported from its vertices, not its transform** | Undo the object move; move the pose's vertices in Edit Mode instead. |
+| **`<pose>`: has changed faces, edges or materials; a pose keeps the door's topology** | Undo the change. Only vertices may move; edit textures on the door. |
+| **`<copy>`: `<door>` already has a second pose; edit that one** | Delete the copy and edit the hidden `<door>_MORPH`. |
+| **`<copy>`: `<door>` is a placed object; the game uses a second pose only for modules** | Only modules open and close in the game. Delete the copy. |
+| **`<copy>`: no vertex differs from `<door>`** | Move the copy's vertices to the closed position first. |
+| **Export a new second pose on its own** | Export the other edits first, then the new door. |
+
+---
+
 ## Give faces another texture from the level
 
 ### UV-editor texture assignment
@@ -801,7 +835,7 @@ Good to know:
    - Blender switches the old version off, replaces it and switches the new
      one on.
 2. Expand **AVP_BlenderPlugin** in **Add-ons** and check that **Version** shows
-   1.0.0-alpha.2. If it still shows the old version, close and reopen Blender, then
+   1.0.0-alpha.3. If it still shows the old version, close and reopen Blender, then
    check again.
 
 The add-on has no preferences, so an update loses no settings. Switching the

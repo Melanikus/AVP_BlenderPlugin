@@ -448,6 +448,9 @@ def _export(scene, text, light_plan=None):
         if obj.type == 'MESH' and obj.get("avp_blender_plugin_source_text") != text.name:
             light_plan.skipped.append(f"{obj.name}: separate new objects are not exportable; add geometry in Edit Mode")
     objects = {}
+    pose_objects = []     # a door's stored second pose, edited in place
+    new_poses = []        # (door, copy named <door>_MORPH): a second pose to add
+    from . import door_morph
     for obj in scene.objects:
         if obj.get("avp_blender_plugin_source_text") != text.name:
             continue
@@ -477,7 +480,22 @@ def _export(scene, text, light_plan=None):
                         light_plan.skipped.append(f"{obj.name}: moving game markers is not supported")
             continue
         obj.update_from_editmode()
+        if door_morph.is_pose_object(obj):
+            pose_objects.append(obj)
+            continue
         offset = obj.get("avp_blender_plugin_object_chunk_offset")
+        if offset is None and obj.get("avp_blender_plugin_type") == "morph":
+            continue   # the importer's study copy of a morph target ("Import Morph"), not part of the level
+        if isinstance(offset, int) and offset in objects:
+            # a copy of a door that is named <door>_MORPH is a second pose to add; any other copy is still refused
+            other = objects[offset]
+            if door_morph.pose_name_matches(other.name, obj.name):
+                new_poses.append((other, obj))
+                continue
+            if door_morph.pose_name_matches(obj.name, other.name):
+                objects[offset] = obj
+                new_poses.append((obj, other))
+                continue
         if not isinstance(offset, int) or str(offset) not in placements or offset in objects:
             raise ValueError(f"{obj.name}: missing or duplicated preserved placement")
         objects[offset] = obj
@@ -491,6 +509,8 @@ def _export(scene, text, light_plan=None):
     texture_writes = 0
     edited_geometry = None
     additions = {}
+    prepend = {}
+    morph_writes = 0
     edited_objects = []
     from .new_geometry import has_additions
     regular_pending = any(
@@ -559,6 +579,22 @@ def _export(scene, text, light_plan=None):
         if len(initial) != len(current) and not growing:
             raise ValueError(f"{obj.name}: vertex count changed")
         object_node = nodes[offset]
+        door_shape = nodes.get(obj.get("avp_blender_plugin_shape_chunk_offset"))
+        if (door_shape is not None and door_shape.identifier == b"REBSHAPE" and door_morph.morph_container(door_shape) is not None
+                and door_morph.is_module(original, object_node)):
+            if obj.get("avp_blender_plugin_morph_preview", -1) != -1 or "avp_blender_plugin_morph_factor" in obj:
+                # the mesh shows a stored pose (a preview or a Play under way), not the mapper's edit of the first pose
+                light_plan.skipped.append(f"{obj.name}: a door pose is being previewed or played; click Base shape first "
+                                          "(mesh edits on doors or placed objects are not exported while it shows)")
+                continue
+            if growing or uv_changed or texture_changed or origin_move is not None:
+                light_plan.skipped.append(f"{obj.name}: a morph door exports vertex moves only (no new geometry, UV, texture or centre edits)")
+                continue
+            written = door_morph.export_first_pose(original, result, tree, nodes, objects, obj, saved, object_node, door_shape, scale)
+            if written:
+                morph_writes += 1
+                edited_objects.append(obj)
+            continue
         if classify(object_node, original) != "module":
             light_plan.skipped.append(f"{obj.name}: mesh edits on doors or placed objects are not supported")
             continue
@@ -642,10 +678,22 @@ def _export(scene, text, light_plan=None):
             struct.pack_into("<3i", result, position, *new)
             _update_derived_geometry(original, result, shape, index, obj.name)
             edited_geometry = shape_headers[0], placement
+    for pose in pose_objects:
+        if door_morph.export_stored_pose(original, result, nodes, objects, record, pose, scale, light_plan.skipped):
+            morph_writes += 1
+            edited_objects.append(pose)
+    for door, copy in new_poses:
+        made = door_morph.export_new_pose(original, tree, nodes, objects, record, door, copy, scale, light_plan.skipped)
+        if made:
+            prepend[made[0]] = made[1]
+    if prepend and (changes or uv_writes or texture_writes or additions or recentred or morph_writes):
+        raise ValueError("Export a new second pose on its own: undo or export the vertex, UV, texture and geometry edits first")
+    if len(prepend) > 1:
+        raise ValueError("Export one new second pose at a time")
     if (additions or recentred) and (changes or uv_writes or texture_writes or (additions and recentred)):
         raise ValueError("Export new geometry and a moved centre separately from vertex, UV and texture edits; undo one edit family first")
     from .raw_rif import replace_payloads
-    decoded = replace_payloads(bytes(result), tree, additions) if additions else bytes(result)
+    decoded = replace_payloads(bytes(result), tree, additions, prepend) if additions or prepend else bytes(result)
     scan = read_level(decoded)
     if recentred:
         header, position, label, shift = recentred[0]
@@ -658,7 +706,7 @@ def _export(scene, text, light_plan=None):
         _check_scaled_bounds(decoded, header, placement.pos, scan.environment_scale)
         log.info("Vertex export changed %s vertex %s at byte %s: %s -> %s; derived normals/bounds updated; no size/offset fields changed", *changes[0])
         return finish(decoded, edited_objects)
-    if uv_writes or texture_writes or additions or light_plan.changed or record.get("custom_textures"):
+    if uv_writes or texture_writes or additions or prepend or morph_writes or light_plan.changed or record.get("custom_textures"):
         return finish(decoded, edited_objects)
     encoded_file = record.get("compressed_file")
     if encoded_file is not None:
