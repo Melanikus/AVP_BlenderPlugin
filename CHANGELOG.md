@@ -20,6 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Each imported face says which polygon of the level it came from.** Every face of an imported mesh carries two numbers,
+  `avp_blender_plugin_source_polygon` (its polygon's place in the shape's list, plus 1; a quad's two triangles both carry it) and
+  `avp_blender_plugin_source_shape` (a token of its shape for this import, also on the object as `avp_blender_plugin_shape_token`).
+  Blender carries both through the edits a mapper makes (E on faces and edges, Shift+D, the knife, Alt+J and loop cuts, merges, P
+  and Ctrl+J, a .blend saved and opened again), so an export that rebuilds a reshaped module can give each face its polygon's kind,
+  and a refusal can name the face. 0 means none: a face made from nothing, or an extruded wall on the module's open edge (Blender
+  has no face across that edge to copy from). A module joined in from another import keeps its own token, so it never passes as ours.
 - **Every level imports; what can't be loaded is named, kept and saved unchanged.** A texture or bitmap that isn't
   anywhere no longer stops an import: it gets a magenta placeholder material named after it (`<level>_MISSING_<file>`),
   as the game itself draws such a polygon untextured (`chunk_load.cpp` `copy_to_shapeheader`). A shape or object the

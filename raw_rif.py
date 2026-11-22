@@ -173,6 +173,7 @@ def retain_source(scene, collection, raw, tree, filepath, scale, include_markers
     bpy.context.view_layer.update()
     record["placements"] = {}
     baseline_bytes = 0
+    from .geometry import mark_source_shape, shape_token
     for obj in collection.all_objects:
         if obj.type == 'MESH' and obj.get("avp_blender_plugin_placement_index") is not None:
             index = obj["avp_blender_plugin_placement_index"]
@@ -181,6 +182,10 @@ def retain_source(scene, collection, raw, tree, filepath, scale, include_markers
             baseline_bytes += len(obj.data.vertices) * 12
             if baseline_bytes > MAX_RIF_BYTES:
                 raise ValueError("Imported vertex baseline exceeds 32 MiB")
+            # the per-face baseline's shape (geometry.py SOURCE_SHAPE_ATTRIBUTE): this import's token for the shape chunk, on every face and
+            # on the object; 0 (none) where two shapes share the number and the object is shown but not linked for editing
+            shape_offset = shapes.get(objects[index][1])
+            mark_source_shape(obj, shape_token(import_id, shape_offset) if shape_offset is not None else 0)
             record["placements"][str(objects[index][0])] = baseline(obj)
     from .door_morph import create_poses
     record["poses"] = create_poses(collection, raw, tree, objects, shapes, scale, baseline)
