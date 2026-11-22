@@ -86,7 +86,9 @@ def needs_rebuild(obj, saved):
     """True when the module's mesh no longer fits the older export paths: an original point or face is gone, or the original faces,
     their edges or their material slots changed (cut, merged, extruded, a slot assigned). Moved points, UV moves and appended
     faces on an untouched original keep their older, smaller writes."""
-    obj.update_from_editmode()   # in Edit Mode the mesh's own lists lag behind the edit until this (Export does it too)
+    # Call it in Object Mode, as Export does: in Edit Mode the mesh's own lists aren't the edit (see plan). This only helps a
+    # mesh whose Edit Mode began in this session
+    obj.update_from_editmode()
     mesh = obj.data
     counts = saved.get("mesh_counts")
     if not isinstance(counts, list) or len(counts) != 4:
@@ -232,13 +234,27 @@ def _material_bitmap(obj, material, source, import_bitmaps, bitmaps):
 
 def plan(scene, obj):
     """The module rebuilt from its mesh: {chunk offset: new payload} for its REBSHAPE's children and its object's SHPVTINT, plus the
-    source and a line of words for the export's report. Raises ValueError, in plain words, when it can't."""
+    source and a line of words for the export's report. Raises ValueError, in plain words, when it can't.
+
+    IN EDIT MODE the mesh's own loop and UV lists are not the edit: in a .blend OPENED in Edit Mode they read empty until Edit Mode is
+    really left, and update_from_editmode doesn't fill them (Dietrich, 11-22, the owner's "connect": a direct call refused it, "needs
+    its one imported UV map", while Export, which leaves Edit Mode first, rebuilt it). So, like Export, this leaves Edit Mode for the
+    time of the call and goes back to it after."""
+    import bpy
+    editing = bpy.context.mode == 'EDIT_MESH' or obj.mode == 'EDIT'
+    if editing:
+        bpy.ops.object.mode_set(mode='OBJECT')
+    try:
+        return _plan(scene, obj)
+    finally:
+        if editing and bpy.context.mode != 'EDIT_MESH':
+            bpy.ops.object.mode_set(mode='EDIT')
+
+
+def _plan(scene, obj):
+    """plan(), in Object Mode."""
     source = _Source(scene, obj)
     saved, raw = source.saved, source.raw
-    # A module left in Edit Mode (a saved .blend can hold one) has its loops and UVs only in the edit mesh: written into the mesh
-    # here, as Export does for every object, so a direct call and Export judge the same data (Dietrich, 11-22: connect, saved in
-    # Edit Mode, was refused "needs its one imported UV map" by the direct call and rebuilt by Export)
-    obj.update_from_editmode()
     mesh = obj.data
     if [value for row in obj.matrix_world for value in row] != saved["matrix"]:
         raise ValueError(f"{obj.name}: the module was moved, turned or scaled as an object; move its geometry in Edit Mode instead "

@@ -168,6 +168,27 @@ class WholeShapeExportProof(unittest.TestCase):
             bpy.ops.object.mode_set(mode='OBJECT')
         self.assertIn("rebuilt whole", words)
         self.assertTrue(written)
+        self.assertEqual(bpy.context.mode, 'OBJECT')
+
+    def test_c_a_file_opened_in_edit_mode_is_judged_the_same(self):
+        # The owner's very case (Dietrich, 11-22): a .blend SAVED in Edit Mode and opened again. Its mesh's UV list reads empty until
+        # Edit Mode is really left; update_from_editmode doesn't fill it. Last test: opening a file replaces everything
+        from avp_blender_plugin import whole_shape
+        for other in bpy.context.selected_objects:
+            other.select_set(False)
+        self.obj.select_set(True)
+        bpy.context.view_layer.objects.active = self.obj
+        bpy.ops.object.mode_set(mode='EDIT')
+        saved = PROOF / "saved-in-edit-mode.blend"
+        bpy.ops.wm.save_as_mainfile(filepath=str(saved), copy=True)
+        bpy.ops.object.mode_set(mode='OBJECT')
+        bpy.ops.wm.open_mainfile(filepath=str(saved))
+        opened = bpy.data.objects[self.name]
+        self.assertEqual(opened.mode, 'EDIT', "the file opened with the module in Edit Mode")
+        _, written, words = whole_shape.plan(bpy.context.scene, opened)
+        self.assertIn("rebuilt whole", words)
+        self.assertTrue(written)
+        self.assertEqual(bpy.context.mode, 'EDIT_MESH', "Edit Mode given back after the call")
 
 
 try:
