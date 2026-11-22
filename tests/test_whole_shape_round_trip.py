@@ -4,7 +4,7 @@
 REBSHAPE bytes, byte for byte. That is the strongest guard the new writer can have: whatever it rebuilds, an untouched module comes out as
 it went in, so a level exported with no change is the level it was.
 
-Two ways to run it, each headless on the test profile (AvP-docs/tools/vasquez/blendavp/test-blender52.sh -b --factory-startup ...):
+Two ways to run it, each headless on the test profile (Blender with every BLENDER_USER_* folder pointed at a separate test profile, -b --factory-startup ...):
   --python <this> -- <game-data-folder> <proof-folder> --levels Genshd1 Derelict Invasion kens-co-op
       each level imported from <game-data-folder>\\avp_rifs\\<name>.RIF with the add-on's own importer, then EVERY module compared;
   <a COPY of a saved .blend> -Y --python <this> -- <game-data-folder> <proof-folder> --opened

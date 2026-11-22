@@ -15,7 +15,7 @@ Shape_Merge_Data_Chunk, chunk_light.cpp's Shape_Vertex_Intensities_Chunk; the po
      as many corners as the polygon has. (A list number past the count is an out-of-bounds write in retail, 0x45e764.)
   6. SHPHEAD1: comes before SHPRAWVT and SHPPOLYS (retail sets the counts from all three, the last read winning, FUN_004ddfe0); its point
      and polygon counts equal the payloads'; every point lies within its box; every polygon's normal index is in range.
-The retail addresses: Frost, from Rebellion's AvP_Classic.exe (sha256 6443ab08), AvP-docs/review/blendavp-game-reads-by-number.md.
+The retail addresses: Frost, from Rebellion's AvP_Classic.exe (sha256 6443ab08); the table is in docs/WHOLE-SHAPE.md.
 """
 
 import struct

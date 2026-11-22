@@ -6,7 +6,7 @@ that rebuilds a reshaped module can give each face its polygon's type and flags,
   0 for none.
 - avp_blender_plugin_source_shape (INT, FACE): the shape's token, the same number as the object's avp_blender_plugin_shape_token; 0 for
   none. The token comes from the import's own id and the shape chunk's place, so another import's module never carries ours.
-Blender itself carries both through the mapper's edits (measured first on a plain grid: AvP-docs/tools/drake/blendavp/probe_face_attr.py):
+Blender itself carries both through the mapper's edits (measured first on a plain grid, with Drake's probe script probe_face_attr.py):
 a new face takes a neighbour's values, and only a face made from nothing gets 0. Proved here on a real Genshd1 module: E (on faces and on
 an edge), Shift+D, a knife cut, a loop cut, a merge, P and Ctrl+J, another import's module joined in, a face added from nothing, and a
 .blend saved and opened again.
