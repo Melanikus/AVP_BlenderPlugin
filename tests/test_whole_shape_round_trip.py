@@ -95,7 +95,7 @@ def compare_level(scene, text, only_unchanged):
     for obj, node, shape in modules:
         result["modules"] += 1
         if RULES_ON_SOURCE:
-            broken = check_module(rebuild_tree(raw, shape), rebuild_tree(raw, node))
+            broken = check_module(rebuild_tree(raw, shape), rebuild_tree(raw, node), rebuild_tree(raw, node))
             if broken:
                 result["source_rules_broken"].append({"module": obj.name, "problems": broken[:6]})
         if whole_shape is not None:
@@ -104,7 +104,7 @@ def compare_level(scene, text, only_unchanged):
             try:
                 written = rebuilt(scene, obj)
                 result["rules_checked"] += 1
-                broken = check_module(*written)
+                broken = check_module(*written, rebuild_tree(raw, node))   # the light sets must be the source's
                 if broken:
                     result["rules_broken"].append({"module": obj.name, "problems": broken[:6]})
             except ValueError:
