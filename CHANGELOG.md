@@ -6,6 +6,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Export the shape as it is.** A module edited the way Blender edits (vertices welded, faces extruded, cut or deleted, a
+  material slot changed, new faces on a reshaped original) used to be refused at Export ("Append both new vertices and faces; do
+  not remove original geometry", "New geometry must preserve all original vertices, faces, UVs and materials"). Export now
+  rebuilds such a module whole from its mesh (whole_shape.py). It writes, as one set, the module's points, polygons, UV lists,
+  normals, merge pairs, counts, box and radius, and the baked light colours on its object. Everything else in the level is kept
+  byte for byte.
+  - A record the mesh didn't change keeps its exact bytes, so a module nobody touched comes back identical.
+  - A quad is written only when it is flat within 1 game unit and convex, otherwise as triangles. Every polygon has 3 or 4 corners.
+  - New or moved points take the baked colour of the nearest original point. That is an approximation until a lighting rebake
+    exists.
+  - Export names the modules it rebuilt, and says to link their AI again in Open Inteng where a doorway or a floor moved.
+  - Still refused, by name:
+    - shapes with a door's poses, animation, animated textures, an external bitmap list or a prebuilt header;
+    - shapes shared by several placements;
+    - a module moved as an object;
+    - more than 10000 points.
+
 ### Fixed
 
 - **A refused texture pick stays on screen and says why.** Picking a level RIM in the UV editor's image drop-down for faces the add-on

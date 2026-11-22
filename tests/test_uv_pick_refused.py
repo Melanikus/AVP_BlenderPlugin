@@ -141,16 +141,15 @@ class RefusedPickProof(unittest.TestCase):
         picker._remember_editors()
         self.assertEqual(self.space.image, face_image(self.obj, self.other_face))
 
-    def test_b_export_refusal_in_the_same_plain_words(self):
+    def test_b_export_now_takes_it_whole(self):
+        # 059980f: Export refused this module (new faces AND a moved original vertex) in the same plain words as the pick. Since the
+        # whole-shape writer (whole_shape.py, the owner's "export the shape as it is"), Export takes it in one go and says so; the
+        # pick stays refused until textures on a rebuilt module land (Drake's part), which test_a proves
         if bpy.context.mode == 'EDIT_MESH':
             bpy.ops.object.mode_set(mode='OBJECT')
         output = PROOF / "uv-pick-refused-export.rif"
-        with self.assertRaises(RuntimeError) as refused:
-            bpy.ops.export_scene.avp_blender_plugin(filepath=str(output), source_text=self.text.name)
-        words = str(refused.exception)
-        for wanted in (self.obj.name, "new faces", "1 original vertex moved", "P > Selection", "Ctrl+J"):
-            self.assertIn(wanted, words, f"Export's refusal says {wanted!r}: {words!r}")
-        self.assertFalse(output.exists())
+        self.assertEqual(bpy.ops.export_scene.avp_blender_plugin(filepath=str(output), source_text=self.text.name), {'FINISHED'})
+        self.assertTrue(output.exists())
 
 
 try:
