@@ -19,6 +19,7 @@ sys.dont_write_bytecode = True
 args = sys.argv[sys.argv.index("--") + 1:]
 sys.path.insert(0, str(Path(__file__).resolve().parent))   # tests/: the proof folder helper
 from _proof_folder import no_typed_proof_folder, proof_folder
+from _level_bytes import level_file_bytes   # the level file's bytes as the importer read them: no raw read of the typed path
 no_typed_proof_folder(args, "-- <game-data-folder> [--manual]")
 DATA = Path(args[0])   # the game's data: only read
 PROOF = proof_folder("uv-texture-picker")   # its own folder, printed: nothing typed is ever written to (tests/_proof_folder.py)
@@ -50,6 +51,7 @@ class UVTextureProof(unittest.TestCase):
         assert bpy.ops.import_scene.avp_blender_plugin(
             filepath=str(cls.input), game_data=str(DATA)) == {'FINISHED'}
         cls.text = next(iter(set(bpy.data.texts) - before))
+        cls.file_bytes = level_file_bytes(cls.text, source_from_text)   # the file as the importer read it, taken once (tests/_level_bytes.py)
         cls.raw, tree, record = source_from_text(cls.text)
         nodes = {node.offset: node for node in walk_tree(tree)}
         # a door's closed-pose mesh is in the level but is not a placement of its own
@@ -213,7 +215,7 @@ class UVTextureProof(unittest.TestCase):
             self.dispatches[0]["notify"]()
             assign.assert_not_called()
         self.assertFalse(self.obj.get("avp_blender_plugin_texture_edits"))
-        self.assertEqual(self.exported_bytes(), self.input.read_bytes())
+        self.assertEqual(self.exported_bytes(), self.file_bytes)
         self.dropdown(self.choices["images"][self.bitmap])
         self.assert_pick()
 
@@ -257,13 +259,13 @@ class UVTextureProof(unittest.TestCase):
         self.dropdown(self.foreign)
         self.assertFalse(self.obj.get("avp_blender_plugin_texture_edits"))
         self.assertEqual(self.space.image, self.foreign)
-        self.assertEqual(self.exported_bytes(), self.input.read_bytes())
+        self.assertEqual(self.exported_bytes(), self.file_bytes)
 
     def test_checkbox_off_only_changes_view(self):
         bpy.context.scene.avp_blender_plugin_assign_image_dropdown = False
         self.dropdown(self.choices["images"][self.bitmap])
         self.assertFalse(self.obj.get("avp_blender_plugin_texture_edits"))
-        self.assertEqual(self.exported_bytes(), self.input.read_bytes())
+        self.assertEqual(self.exported_bytes(), self.file_bytes)
 
     def test_non_imported_mesh_refused_and_panel_hidden(self):
         bpy.ops.object.mode_set(mode='OBJECT')
@@ -340,6 +342,7 @@ class UVRepeatProof(unittest.TestCase):
         assert bpy.ops.import_scene.avp_blender_plugin(
             filepath=str(cls.input), game_data=str(DATA)) == {'FINISHED'}
         cls.text = next(iter(set(bpy.data.texts) - before))
+        cls.file_bytes = level_file_bytes(cls.text, source_from_text)   # the file as the importer read it, taken once (tests/_level_bytes.py)
         raw, tree, record = source_from_text(cls.text)
         nodes = {node.offset: node for node in walk_tree(tree)}
         choices = catalogue(cls.text)
@@ -430,7 +433,7 @@ class UVRepeatProof(unittest.TestCase):
 
     def test_z_tiling_attribute_survives_blend_reopen_and_export_is_unchanged(self):
         bpy.ops.object.mode_set(mode='OBJECT')
-        self.assertEqual(export_bytes(bpy.context.scene, self.text), self.input.read_bytes())
+        self.assertEqual(export_bytes(bpy.context.scene, self.text), self.file_bytes)
         name, source, index = self.obj.name, self.text.name, self.face
         flags = [entry.value for entry in self.obj.data.attributes[TILED_FACE_ATTRIBUTE].data]
         path = PROOF / "uv-repeat-persistence.blend"
@@ -439,7 +442,7 @@ class UVRepeatProof(unittest.TestCase):
         obj = bpy.data.objects[name]
         self.assertEqual([entry.value for entry in obj.data.attributes[TILED_FACE_ATTRIBUTE].data], flags)
         self.assertEqual(obj.data.attributes[TILED_FACE_ATTRIBUTE].data[index].value, 1)
-        self.assertEqual(export_bytes(bpy.context.scene, bpy.data.texts[source]), self.input.read_bytes())
+        self.assertEqual(export_bytes(bpy.context.scene, bpy.data.texts[source]), self.file_bytes)
 
 
 try:
