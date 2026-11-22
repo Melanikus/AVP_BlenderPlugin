@@ -86,6 +86,7 @@ def needs_rebuild(obj, saved):
     """True when the module's mesh no longer fits the older export paths: an original point or face is gone, or the original faces,
     their edges or their material slots changed (cut, merged, extruded, a slot assigned). Moved points, UV moves and appended
     faces on an untouched original keep their older, smaller writes."""
+    obj.update_from_editmode()   # in Edit Mode the mesh's own lists lag behind the edit until this (Export does it too)
     mesh = obj.data
     counts = saved.get("mesh_counts")
     if not isinstance(counts, list) or len(counts) != 4:
@@ -234,6 +235,10 @@ def plan(scene, obj):
     source and a line of words for the export's report. Raises ValueError, in plain words, when it can't."""
     source = _Source(scene, obj)
     saved, raw = source.saved, source.raw
+    # A module left in Edit Mode (a saved .blend can hold one) has its loops and UVs only in the edit mesh: written into the mesh
+    # here, as Export does for every object, so a direct call and Export judge the same data (Dietrich, 11-22: connect, saved in
+    # Edit Mode, was refused "needs its one imported UV map" by the direct call and rebuilt by Export)
+    obj.update_from_editmode()
     mesh = obj.data
     if [value for row in obj.matrix_world for value in row] != saved["matrix"]:
         raise ValueError(f"{obj.name}: the module was moved, turned or scaled as an object; move its geometry in Edit Mode instead "

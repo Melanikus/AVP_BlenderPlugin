@@ -153,6 +153,22 @@ class WholeShapeExportProof(unittest.TestCase):
         self.assertAlmostEqual(area(again.data), self.edited_area, delta=self.edited_area * 0.001 + 1e-4,
                                msg="the faces read back cover the edited mesh's area")
 
+    def test_b_a_module_left_in_edit_mode_is_judged_the_same(self):
+        # Dietrich, 11-22: the owner's "connect", saved in Edit Mode, was refused by a direct whole_shape call ("needs its one imported
+        # UV map": in Edit Mode the mesh's own UV list is empty) while Export, which leaves Edit Mode first, rebuilt it
+        from avp_blender_plugin import whole_shape
+        for other in bpy.context.selected_objects:
+            other.select_set(False)
+        self.obj.select_set(True)
+        bpy.context.view_layer.objects.active = self.obj
+        bpy.ops.object.mode_set(mode='EDIT')
+        try:
+            _, written, words = whole_shape.plan(bpy.context.scene, self.obj)
+        finally:
+            bpy.ops.object.mode_set(mode='OBJECT')
+        self.assertIn("rebuilt whole", words)
+        self.assertTrue(written)
+
 
 try:
     result = unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.loadTestsFromTestCase(WholeShapeExportProof))
