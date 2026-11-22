@@ -1,6 +1,6 @@
 """Focused Blender proof: real level RIMs, UV-editor entry points and combined export.
 
-Run headlessly with -- <game-data-folder> <proof-folder> [--manual].
+Run headlessly with -- <game-data-folder> [--manual]; it writes into its own proof folder, printed as PROOF FOLDER <path>.
 The msgbus callback is dispatched explicitly: background Blender has no UI event loop.
 """
 
@@ -17,7 +17,11 @@ import bpy
 
 sys.dont_write_bytecode = True
 args = sys.argv[sys.argv.index("--") + 1:]
-DATA, PROOF = Path(args[0]), Path(args[1])   # spelled out for Snyk Code (red first; the next commit takes no typed proof path)
+sys.path.insert(0, str(Path(__file__).resolve().parent))   # tests/: the proof folder helper
+from _proof_folder import no_typed_proof_folder, proof_folder
+no_typed_proof_folder(args, "-- <game-data-folder> [--manual]")
+DATA = Path(args[0])   # the game's data: only read
+PROOF = proof_folder("uv-texture-picker")   # its own folder, printed: nothing typed is ever written to (tests/_proof_folder.py)
 WORK = Path(globals().get("addon_folder", Path(__file__).resolve().parents[1]))
 spec = importlib.util.spec_from_file_location("avp_blender_plugin", WORK / "__init__.py",
                                             submodule_search_locations=[str(WORK)])
