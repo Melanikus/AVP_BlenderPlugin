@@ -193,6 +193,20 @@ def update_texture_bytes(original, result, shape, obj, edits):
     return writes
 
 
+TEXTURED_TYPES = (5, 6, 7, 21, 22, 23, 24, 25)   # the polygon types the game draws with a texture
+
+
+def picks_by_face(obj, saved):
+    """True when a pick goes on the selected FACES themselves, as their material: the module is rebuilt from its faces by the whole-shape
+    export (whole_shape.needs_rebuild: an original part gone, cut, merged or extruded, a slot changed by hand), or it has new faces (the
+    append path reads a new face's material; a pick on one of its original faces changes that face's slot, which makes it a rebuild, as
+    Export then agrees). Any other module (moved points, moved UVs, earlier picks) keeps the exact way: whole source polygons, their bytes
+    changed in place, UV texels kept (texture_state)."""
+    from .new_geometry import has_additions
+    from .whole_shape import needs_rebuild
+    return needs_rebuild(obj, saved) or has_additions(obj.data, saved)
+
+
 @reader_boundary("RIM texture picker")
 def assign_texture(context, bitmap):
     obj = context.object
@@ -210,13 +224,15 @@ def assign_texture(context, bitmap):
     if not isinstance(bitmap, int) or not 0 <= bitmap <= 32767 or bitmap not in bitmaps:
         raise ValueError("Chosen texture must name an existing BMPNAMES entry (0..32767)")
     saved = record["placements"][str(node.offset)]
-    from .new_geometry import has_additions, validate_prefix
-    growing = has_additions(obj.data, saved)
-    if growing:
-        validate_prefix(obj, saved)
+    # A MODULE WHOSE SHAPE CHANGED (the owner's kens_co_op bunker entrance, 2026-11-22: reshaped and given new faces, and the picker said
+    # "Select only new faces" for an original one) is rebuilt from its faces by the whole-shape export, so a pick gives the picked RIM to the
+    # selected FACES themselves, original or new, as their material (the picker's bitmap and source on it, as new faces have always had;
+    # their UVs are left as they are), and never adds to the exact way's record (avp_blender_plugin_texture_edits), which Export would
+    # take for the older path. A module of the imported shape keeps the exact way below: whole source polygons, their bytes changed in
+    # place, UV texels kept.
+    rebuilt = picks_by_face(obj, saved)
+    if rebuilt:
         selected = {poly.index for poly in obj.data.polygons if poly.select}
-        if any(index < saved["mesh_counts"][2] for index in selected):
-            raise ValueError("Select only new faces; original-polygon assignments export separately")
         previous = {}
     else:
         export_bytes(context.scene, text)
@@ -240,9 +256,10 @@ def assign_texture(context, bitmap):
         raise ValueError("The source shape is shared by other placements")
     polygons_node = next(n for n in shapes[0].children if n.identifier == b"SHPPOLYS")
     polygons = extract_polygons(raw[polygons_node.offset + 12:polygons_node.offset + polygons_node.size])
-    if not growing and any(polygons[index]["engine_type"] not in (5, 6, 7, 21, 22, 23, 24, 25)
-           for index in selected):
+    if not rebuilt and any(polygons[index]["engine_type"] not in TEXTURED_TYPES for index in selected):
         raise ValueError("Only already-textured polygons can use the RIM picker")
+    # (on a module that is rebuilt, any face may take a RIM, even one that was a flat-colour polygon: the whole-shape export writes a face
+    # whose material is a level texture as a textured polygon, so the pick does what the mapper sees)
     image = catalogue(text)["images"][bitmap]
     name = f"AvP_Texture_{record['import_id'][:8]}_{bitmap}"
     material = get_material(name, None, {}, image=image,
@@ -254,7 +271,7 @@ def assign_texture(context, bitmap):
     appended = obj.data.materials.find(material.name) < 0
     if appended:
         obj.data.materials.append(material)
-    if growing:
+    if rebuilt:
         slot = obj.data.materials.find(material.name)
         for index in selected:
             obj.data.polygons[index].material_index = slot
@@ -325,7 +342,8 @@ def execute_assignment(operator, context, bitmap, source_text):
 class AVP_BLENDER_PLUGIN_OT_texture_picker(bpy.types.Operator):
     bl_idname = "avp_blender_plugin.pick_texture"
     bl_label = "Choose Existing RIM Texture"
-    bl_description = "Assign an existing level texture to selected new faces or whole original source polygons"
+    bl_description = ("Assign an existing level texture to whole original source polygons; on a module whose shape changed, to the "
+                      "selected faces themselves, original or new")
     bl_options = {'REGISTER', 'UNDO'}
     source_text: bpy.props.StringProperty(options={'HIDDEN'})
     bitmap: bpy.props.EnumProperty(name="Level texture", items=_items)
@@ -346,7 +364,7 @@ class AVP_BLENDER_PLUGIN_OT_texture_picker(bpy.types.Operator):
 
     def draw(self, context):
         self.layout.template_icon_view(self, "bitmap", show_labels=True, scale=6)
-        self.layout.label(text="Selected faces: whole source polygons; UV texels stay unchanged")
+        self.layout.label(text="Selected faces: whole source polygons, UV texels kept; on a reshaped module, the faces themselves")
         self.layout.label(text="Vertex and UV moves can be exported together with this pick")
 
     def execute(self, context):

@@ -111,11 +111,17 @@ class TestBuildLookup(unittest.TestCase):
                          {(1, 0): ord('A'), (2, 2): ord('B'), (2, 3): ord('C')})
 
 
+# What the decoder accepts changed with the hardening in 1.3.74 (26ed330, huffman.py:115-137); these tests were written for the first upload
+# (c4f9322), when a short or partial decode was returned. Now (Frost 2026-11-22, card 2e, corrected to the decoder as it is, never skipped):
+# - a decoded level is 12 bytes at least (its REBINFF2 header alone is 12) and 32 MiB at most, and no more than one byte per bit given;
+# - the code must fill its space exactly (a single-symbol table fills only half of it), as the game's own canonical tables do;
+# - a decode that can't reach its declared size is refused, never returned in part.
+# Every stock level decodes under these rules (all 63 import). So the round trips below use messages of 12 bytes or more.
 class TestRoundtrip(unittest.TestCase):
     def test_two_symbols(self):
         counts, ba = _alphabet([ord('A'), ord('B')])
-        self.assertEqual(decompress_rif(_make_rif(b"ABAB", counts, ba)),
-                         b"ABAB")
+        self.assertEqual(decompress_rif(_make_rif(b"ABAB" * 4, counts, ba)),
+                         b"ABAB" * 4)
 
     def test_three_symbols_asymmetric(self):
         counts = [1, 2] + [0] * (MAX_DEPTH - 2)
@@ -124,32 +130,44 @@ class TestRoundtrip(unittest.TestCase):
         ba[254] = ord('B')
         ba[253] = ord('C')
         self.assertEqual(
-            decompress_rif(_make_rif(b"AABBACAB", counts, ba)),
-            b"AABBACAB")
+            decompress_rif(_make_rif(b"AABBACAB" * 2, counts, ba)),
+            b"AABBACAB" * 2)
 
-    def test_empty_message(self):
+    def test_empty_message_is_refused(self):
+        # no level is under 12 bytes: its REBINFF2 header alone is 12 (huffman.py:125)
         counts = [1] + [0] * (MAX_DEPTH - 1)
         ba = [0] * 256
         ba[255] = 0
         raw = _build_rif_bytes(0, 0, counts, ba)
-        self.assertEqual(decompress_rif(raw), b"")
+        with self.assertRaisesRegex(ValueError, "size exceeds bounds"):
+            decompress_rif(raw)
 
-    def test_single_repeated_symbol(self):
+    def test_single_symbol_code_is_refused(self):
+        # one symbol fills half the code space: not a canonical table the game writes (huffman.py:129-131)
         counts, ba = _alphabet([ord('Z')])
-        self.assertEqual(
-            decompress_rif(_make_rif(b"ZZZZZZZZ", counts, ba)),
-            b"ZZZZZZZZ")
+        with self.assertRaisesRegex(ValueError, "code space"):
+            decompress_rif(_make_rif(b"ZZZZZZZZZZZZZZZZ", counts, ba))
 
 
 class TestTruncation(unittest.TestCase):
-    def test_claiming_more_us_than_encodable(self):
-        # Encode 4 bytes, then pretend uncompressed size is 20.
+    def test_claiming_more_us_than_the_bits_can_hold_is_refused(self):
+        # 16 one-bit symbols are 2 bytes of stream; a declared size of 20 needs more bits than there are (huffman.py:125)
         counts, ba = _alphabet([ord('A'), ord('B')])
         lookup = build_lookup(counts, ba)
-        compressed = _encode(b"ABAB", lookup)
+        compressed = _encode(b"ABAB" * 4, lookup)
         raw = _build_rif_bytes(len(compressed), 20, counts, ba) + compressed
-        decoded = decompress_rif(raw)
-        self.assertLess(len(decoded), 20)
+        with self.assertRaisesRegex(ValueError, "size exceeds bounds"):
+            decompress_rif(raw)
+
+    def test_a_stream_that_runs_out_is_refused_not_returned_in_part(self):
+        # 12 two-bit symbols are 24 bits; a declared 13 fits the bound (13 <= 24) but the stream ends after 12 (huffman.py:133-136)
+        counts = [1, 2] + [0] * (MAX_DEPTH - 2)
+        ba = [0] * 256
+        ba[255], ba[254], ba[253] = ord('A'), ord('B'), ord('C')
+        compressed = _encode(b"C" * 12, build_lookup(counts, ba))
+        raw = _build_rif_bytes(len(compressed), 13, counts, ba) + compressed
+        with self.assertRaisesRegex(ValueError, "incomplete"):
+            decompress_rif(raw)
 
 
 class TestValidation(unittest.TestCase):

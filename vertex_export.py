@@ -525,12 +525,15 @@ def _export(scene, text, light_plan=None):
     texture_writes = 0
     edited_geometry = None
     additions = {}
+    rebuilt = {}     # whole_shape.py: the modules rebuilt whole from their meshes ("export the shape as it is", the owner 11-22)
     prepend = {}
     morph_writes = 0
     edited_objects = []
     from .new_geometry import has_additions
+    from . import whole_shape
     regular_pending = any(
         not has_additions(obj.data, placements[str(offset)])
+        and not whole_shape.needs_rebuild(obj, placements[str(offset)])
         and (mesh_signature(obj.data) != placements[str(offset)]["signature"]
              or obj.get("avp_blender_plugin_texture_edits")
              or ([value for row in obj.matrix_world for value in row] == placements[str(offset)]["matrix"]
@@ -545,6 +548,17 @@ def _export(scene, text, light_plan=None):
             raise ValueError(f"{obj.name}: invalid preserved object chunk")
         from .new_geometry import has_additions, validate_prefix, build_additions
         growing = has_additions(obj.data, saved)
+        if whole_shape.needs_rebuild(obj, saved):
+            # EXPORT THE SHAPE AS IT IS: welded, extruded, cut or deleted geometry that the older paths can't take; its shape and its
+            # baked light colours are written again from the mesh, as one set (whole_shape.py says what it keeps and what it refuses)
+            if obj.get("avp_blender_plugin_shape_chunk_offset") in unread_shapes or offset in unread_objects:
+                light_plan.skipped.append(f"{obj.name}: its level data can't be read, so it is kept unchanged and saved as it was")
+                continue
+            _, written, words = whole_shape.plan(scene, obj)
+            rebuilt.update(written)
+            light_plan.warnings.append(words)
+            edited_objects.append(obj)   # its layout changed: the refresh refuses it and says to import the saved file again
+            continue
         if growing and regular_pending:
             light_plan.skipped.append(f"{obj.name}: new geometry must be exported separately from vertex/UV/texture edits")
             continue
@@ -713,7 +727,10 @@ def _export(scene, text, light_plan=None):
     if (additions or recentred) and (changes or uv_writes or texture_writes or (additions and recentred)):
         raise ValueError("Export new geometry and a moved centre separately from vertex, UV and texture edits; undo one edit family first")
     from .raw_rif import replace_payloads
-    decoded = replace_payloads(bytes(result), tree, additions, prepend) if additions or prepend else bytes(result)
+    if set(additions) & set(rebuilt):
+        raise ValueError("A module can't take new geometry and be rebuilt whole in one export")
+    payloads = {**additions, **rebuilt}
+    decoded = replace_payloads(bytes(result), tree, payloads, prepend) if payloads or prepend else bytes(result)
     scan = read_level(decoded, skipped=[])   # the saved bytes' own check is _check_unread_kept, in finish()
     if recentred:
         header, position, label, shift = recentred[0]
@@ -726,7 +743,7 @@ def _export(scene, text, light_plan=None):
         _check_scaled_bounds(decoded, header, placement.pos, scan.environment_scale)
         log.info("Vertex export changed %s vertex %s at byte %s: %s -> %s; derived normals/bounds updated; no size/offset fields changed", *changes[0])
         return finish(decoded, edited_objects)
-    if uv_writes or texture_writes or additions or prepend or morph_writes or light_plan.changed or record.get("custom_textures"):
+    if uv_writes or texture_writes or additions or rebuilt or prepend or morph_writes or light_plan.changed or record.get("custom_textures"):
         return finish(decoded, edited_objects)
     # No edits: the file as it came (its compressed copy, checked against the source in _checked_source), or the source
     raw_file = _stored_compressed(record, original)

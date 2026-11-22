@@ -1,6 +1,6 @@
 """Headless hostile-image and external-RIM assignment/export proof.
 
-Run with -- <game-data-folder> <proof-folder>; set TEMP/TMP to an isolated test folder.
+Run with -- <game-data-folder>; set TEMP/TMP to an isolated test folder. It writes into its own proof folder there, printed as PROOF FOLDER <path>.
 """
 
 import binascii
@@ -18,7 +18,11 @@ import bpy
 
 sys.dont_write_bytecode = True
 args = sys.argv[sys.argv.index("--") + 1:]
-DATA, PROOF = map(Path, args[:2])
+sys.path.insert(0, str(Path(__file__).resolve().parent))   # tests/: the proof folder helper
+from _proof_folder import no_typed_proof_folder, proof_folder
+no_typed_proof_folder(args, "-- <game-data-folder>")
+DATA = Path(args[0])   # the game's data: only read
+PROOF = proof_folder("texture-import")   # its own folder, printed: nothing typed is ever written to (tests/_proof_folder.py)
 WORK = Path(globals().get("addon_folder", Path(__file__).resolve().parents[1]))
 spec = importlib.util.spec_from_file_location("avp_blender_plugin", WORK / "__init__.py",
                                             submodule_search_locations=[str(WORK)])

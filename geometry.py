@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import struct
 import time
+import zlib
 
 import bpy
 from mathutils import Matrix
@@ -47,6 +48,36 @@ DEFAULT_TEX_SIZE = 128.0
 # A texture the import could not have: a bright magenta, so the mapper sees at once what to replace
 MISSING_COLOUR = (1.0, 0.0, 1.0, 1.0)
 TILED_FACE_ATTRIBUTE = "avp_blender_plugin_tiled"
+
+# THE PER-FACE BASELINE (Drake and Vasquez 2026-11-22, for the owner's reshaped modules): which of the level's polygons each face came
+# from, so an export that rebuilds a module's shape can give each face its polygon's type and flags, and a refusal can name the face.
+# - SOURCE_POLYGON_ATTRIBUTE: the polygon's place in its shape's SHPPOLYS, plus 1 (a quad's two triangles both carry it); 0 for none.
+#   Why plus 1: Blender gives a face made from nothing (Shift+A in Edit Mode, Ctrl+J of a mesh without it) the value 0, so 0 can only
+#   mean "none", never "polygon 0".
+# - SOURCE_SHAPE_ATTRIBUTE: the token of the shape that polygon belongs to (shape_token), the same number the object holds in
+#   SHAPE_TOKEN_PROPERTY; 0 for none. A face inherits its polygon only when the two are equal: a face joined in (Ctrl+J) from another
+#   module or another import carries another token.
+# Blender itself carries both through the mapper's edits (tests/test_face_baseline.py: E on faces and edges, Shift+D, the knife, loop
+# cuts, merges, P and Ctrl+J, a .blend saved and opened again): a new face takes a neighbour's values (an extruded face's wall, the face
+# across its edge), which still names a polygon of the same module.
+SOURCE_POLYGON_ATTRIBUTE = "avp_blender_plugin_source_polygon"
+SOURCE_SHAPE_ATTRIBUTE = "avp_blender_plugin_source_shape"
+SHAPE_TOKEN_PROPERTY = "avp_blender_plugin_shape_token"
+
+
+def shape_token(import_id, shape_offset):
+    """A shape's token: from the import's own id (a new uuid every import) and the shape chunk's place in the file, so two imports never
+    share one, even of the same level. Nonzero and 31 bits, so it fits Blender's INT attribute and 0 stays "none"."""
+    token = zlib.crc32(f"{import_id}:{shape_offset}".encode("utf-8")) & 0x7fffffff
+    return token or 1
+
+
+def mark_source_shape(obj, token):
+    """Every face of a just-imported mesh gets the shape's token, and the object holds it too (0: no shape of its own, nothing held)."""
+    attribute = obj.data.attributes.get(SOURCE_SHAPE_ATTRIBUTE) or obj.data.attributes.new(SOURCE_SHAPE_ATTRIBUTE, 'INT', 'FACE')
+    attribute.data.foreach_set("value", [token] * len(obj.data.polygons))
+    if token:
+        obj[SHAPE_TOKEN_PROPERTY] = token
 
 # PNG dimensions, keyed by absolute path; the same file is queried once
 # per build_mesh call for every polygon that uses it.
@@ -218,7 +249,7 @@ def build_mesh(shape: ShapeGroup, base, name, scale, bitmaps, tex_index,
     new_verts = [transform(v) for v in verts] if transform else \
                 [(float(v[0]), float(v[1]), float(v[2])) for v in verts]
 
-    faces, fmat, fuv, ftiled, uv_mapping = [], [], [], [], []
+    faces, fmat, fuv, ftiled, fsource, uv_mapping = [], [], [], [], [], []
     mat_lookup, mat_names, mat_objs = {}, [], []
 
     for poly in polys:
@@ -341,6 +372,7 @@ def build_mesh(shape: ShapeGroup, base, name, scale, bitmaps, tex_index,
             fmat.append(slot)
             fuv.append(puv[:3] if len(puv) >= 3 else [])
             ftiled.append(tiled)
+            fsource.append(poly["poly_idx"] + 1)
             map_corners((0, 1, 2))
         elif poly["num_verts"] == 4:
             faces.append((v[0], v[1], v[2]))
@@ -353,6 +385,7 @@ def build_mesh(shape: ShapeGroup, base, name, scale, bitmaps, tex_index,
                        (puv[:3] if len(puv) >= 3 else []))
             map_corners((0, 1, 2, 0, 2, 3))
             ftiled.extend((tiled, tiled))
+            fsource.extend((poly["poly_idx"] + 1, poly["poly_idx"] + 1))   # both triangles of the quad name the quad
 
     if not faces:
         return None
@@ -386,6 +419,7 @@ def build_mesh(shape: ShapeGroup, base, name, scale, bitmaps, tex_index,
                 ext((0.0, 0.0, 0.0, 0.0, 0.0, 0.0))
         uv_layer.data.foreach_set("uv", flat_uvs)
         mesh.attributes.new(TILED_FACE_ATTRIBUTE, 'INT', 'FACE').data.foreach_set("value", ftiled)
+        mesh.attributes.new(SOURCE_POLYGON_ATTRIBUTE, 'INT', 'FACE').data.foreach_set("value", fsource)
         mesh["avp_blender_plugin_uv_mapping"] = uv_mapping
 
     # Optional pivot centering: move the geometry's center to the object origin.

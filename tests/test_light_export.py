@@ -1,6 +1,6 @@
 """Headless real-level proof of light-only bytes, bounds, representations and mixed export.
 
-Run with -- <game-data-folder> <proof-folder> [--manual].
+Run with -- <game-data-folder> [--manual]; it writes into its own proof folder, printed as PROOF FOLDER <path>.
 """
 
 import base64
@@ -17,7 +17,12 @@ from mathutils import Vector
 
 sys.dont_write_bytecode = True
 args = sys.argv[sys.argv.index("--") + 1:]
-DATA, PROOF = map(Path, args[:2])
+sys.path.insert(0, str(Path(__file__).resolve().parent))   # tests/: the proof folder helper
+from _proof_folder import no_typed_proof_folder, proof_folder
+from _level_bytes import level_file_bytes   # the level file's bytes as the importer read them: no raw read of the typed path
+no_typed_proof_folder(args, "-- <game-data-folder> [--manual]")
+DATA = Path(args[0])   # the game's data: only read
+PROOF = proof_folder("light-export")   # its own folder, printed: nothing typed is ever written to (tests/_proof_folder.py)
 WORK = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("avp_blender_plugin", WORK / "__init__.py",
                                             submodule_search_locations=[str(WORK)])
@@ -69,6 +74,7 @@ class LightExportProof(unittest.TestCase):
             filepath=str(cls.input), game_data=str(DATA), editable_game_objects=True,
             animate_placed_lights=False) == {'FINISHED'}
         cls.text = next(iter(set(bpy.data.texts) - before))
+        cls.file_bytes = level_file_bytes(cls.text, source_from_text)   # the file as the importer read it, taken once (tests/_level_bytes.py)
         cls.content = cls.text.as_string()
         cls.raw, tree, cls.record = source_from_text(cls.text)
         cls.nodes = {node.offset: node for node in walk_tree(tree)}
@@ -139,7 +145,7 @@ class LightExportProof(unittest.TestCase):
 
     def test_untouched_lights_and_compressed_file_are_identical(self):
         self.assertFalse(plan_lights(bpy.context.scene, self.text).changed)
-        self.assertEqual(export_bytes(bpy.context.scene, self.text), self.input.read_bytes())
+        self.assertEqual(export_bytes(bpy.context.scene, self.text), self.file_bytes)
 
     def test_native_light_and_marker_moves_change_only_position_bytes(self):
         for obj in (self.std, self.marker):

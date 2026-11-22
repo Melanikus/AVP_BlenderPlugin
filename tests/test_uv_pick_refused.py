@@ -1,11 +1,12 @@
-"""Focused Blender proof: a texture pick the add-on refuses keeps the mapper's pick on screen and says why, in plain words.
+"""Focused Blender proof: the owner's texture pick on his reshaped module (refused on 059980f, which kept it on screen and said why) is
+taken, and Export takes the module whole.
 
 The owner, 2026-11-22, mapping kens_co_op's bunker entrance (a module he had reshaped AND given new faces): "when I try to change the
 texture in the picker, it flashes (not on viewport, just on UV mode on bottom) and goes back to previous/does not change". His session log
 showed why: the UV image drop-down's pick was refused ("New geometry must preserve all original vertices, faces, UVs and materials"), the
 words went only to the status bar, and 0.1 s later "the UV editor follows the selected face's texture" put the face's own image back.
 
-Run headlessly with -- <game-data-folder> <proof-folder>. The msgbus callback is dispatched explicitly (background Blender has no event loop),
+Run headlessly with -- <game-data-folder> (it writes into its own proof folder, printed as PROOF FOLDER <path>). The msgbus callback is dispatched explicitly (background Blender has no event loop),
 as tests/test_uv_texture_picker.py does.
 """
 
@@ -20,7 +21,11 @@ import bpy
 
 sys.dont_write_bytecode = True
 args = sys.argv[sys.argv.index("--") + 1:]
-DATA, PROOF = map(Path, args[:2])
+sys.path.insert(0, str(Path(__file__).resolve().parent))   # tests/: the proof folder helper
+from _proof_folder import no_typed_proof_folder, proof_folder
+no_typed_proof_folder(args, "-- <game-data-folder>")
+DATA = Path(args[0])   # the game's data: only read
+PROOF = proof_folder("uv-pick-refused")   # its own folder, printed: nothing typed is ever written to (tests/_proof_folder.py)
 WORK = Path(globals().get("addon_folder", Path(__file__).resolve().parents[1]))
 spec = importlib.util.spec_from_file_location("avp_blender_plugin", WORK / "__init__.py",
                                             submodule_search_locations=[str(WORK)])
@@ -121,19 +126,23 @@ class RefusedPickProof(unittest.TestCase):
         bpy.msgbus.publish_rna(key=(bpy.types.SpaceImageEditor, "image"))
         self.dispatches[0]["notify"](*self.dispatches[0]["args"])
 
-    def test_a_refused_pick_stays_on_screen_and_says_why(self):
+    def test_a_his_pick_is_taken_and_stays(self):
+        # 059980f: his drop-down pick was refused here ("it has new faces and 1 original vertex moved"), held on screen with a pop-up that
+        # said why. Since the whole-shape writer rebuilds such a module from its faces, the pick is TAKEN (Drake's part 2,
+        # texture_picker.picks_by_face): the face's material is the picker's, nothing goes into the exact way's record, no pop-up, and the
+        # UV editor keeps showing his pick because the face now has it
         self.select_only(self.new_face)
         picker._remember_editors()                       # the follow timer: the new face's own texture is shown first
         self.assertEqual(self.space.image, self.own)
         told = []
         with patch.object(picker, "_tell", side_effect=lambda title, words: told.append((title, words)), create=True):
             self.dropdown(self.pick)
-        self.assertFalse(self.obj.get("avp_blender_plugin_texture_edits"), "the pick is refused: nothing assigned")
-        self.assertEqual(len(told), 1, f"the refusal is told once, in a pop-up ({told})")
-        words = told[0][1] if told else ""
-        for wanted in ("new faces", "1 original vertex moved", "P > Selection", "Ctrl+J"):
-            self.assertIn(wanted, words, f"the pop-up's words say {wanted!r}: {words!r}")
-        for _ in range(3):                               # the follow timer runs every 0.5 s: the pick must stay
+        self.assertEqual(told, [], "no refusal")
+        self.assertFalse(self.obj.get("avp_blender_plugin_texture_edits"), "nothing goes into the exact way's record")
+        self.assertEqual(face_image(self.obj, self.new_face), self.pick, "his face has his pick")
+        material = self.obj.data.materials[self.obj.data.polygons[self.new_face].material_index]
+        self.assertEqual(material.get("avp_blender_plugin_picker_source"), self.text.name, "a picker material of this level")
+        for _ in range(3):                               # the follow timer runs every 0.5 s: the pick stays (the face shows it now)
             picker._remember_editors()
         self.assertEqual(self.space.image, self.pick, "the UV editor keeps showing his pick, no snap-back")
         # another face selected: the editor follows again
@@ -141,16 +150,15 @@ class RefusedPickProof(unittest.TestCase):
         picker._remember_editors()
         self.assertEqual(self.space.image, face_image(self.obj, self.other_face))
 
-    def test_b_export_refusal_in_the_same_plain_words(self):
+    def test_b_export_now_takes_it_whole(self):
+        # 059980f: Export refused this module (new faces AND a moved original vertex) in the same plain words as the pick. Since the
+        # whole-shape writer (whole_shape.py, the owner's "export the shape as it is"), Export takes it in one go and says so, with his
+        # pick of test_a on its new face (textures on a rebuilt module, Drake's part 2)
         if bpy.context.mode == 'EDIT_MESH':
             bpy.ops.object.mode_set(mode='OBJECT')
         output = PROOF / "uv-pick-refused-export.rif"
-        with self.assertRaises(RuntimeError) as refused:
-            bpy.ops.export_scene.avp_blender_plugin(filepath=str(output), source_text=self.text.name)
-        words = str(refused.exception)
-        for wanted in (self.obj.name, "new faces", "1 original vertex moved", "P > Selection", "Ctrl+J"):
-            self.assertIn(wanted, words, f"Export's refusal says {wanted!r}: {words!r}")
-        self.assertFalse(output.exists())
+        self.assertEqual(bpy.ops.export_scene.avp_blender_plugin(filepath=str(output), source_text=self.text.name), {'FINISHED'})
+        self.assertTrue(output.exists())
 
 
 try:

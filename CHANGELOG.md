@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A texture pick on a reshaped module goes on the faces you selected, original or new.** On a module whose shape changed (faces
+  cut, merged or extruded, an original point gone, new faces added), the texture picker and the UV editor's image drop-down used to
+  refuse a pick on an original face ("Select only new faces", "New geometry must preserve ..."; the owner, 2026-11-22, on kens_co_op's
+  bunker entrance). Such a module is now rebuilt from its faces on Export, so a pick gives the picked level RIM to exactly the selected
+  faces, as their material, even a face that was a flat colour, and the UV editor keeps showing it. A module still of its imported shape
+  keeps the exact way: whole polygons, their texels kept.
 - **A refused texture pick stays on screen and says why.** Picking a level RIM in the UV editor's image drop-down for faces the add-on
   can't give it to used to flash: the refusal went only to the status bar, and "the UV editor follows the selected face's texture" put the
   face's own image back half a second later (the owner, 2026-11-22: "it flashes ... and goes back to previous/does not change"). Now the
@@ -20,6 +26,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Export the shape as it is.** A module edited the way Blender edits (vertices welded, faces extruded, cut or deleted, a
+  material slot changed, new faces on a reshaped original) used to be refused at Export ("Append both new vertices and faces; do
+  not remove original geometry", "New geometry must preserve all original vertices, faces, UVs and materials"). Export now
+  rebuilds such a module whole from its mesh (whole_shape.py). It writes, as one set, the module's points, polygons, UV lists,
+  normals, merge pairs, counts, box and radius, and the baked light colours on its object. Everything else in the level is kept
+  byte for byte.
+  - A record the mesh didn't change keeps its exact bytes, so a module nobody touched comes back identical.
+  - A quad is written only when it is flat within 1 game unit and convex, otherwise as triangles. Every polygon has 3 or 4 corners.
+  - New or moved points take the baked colour of the nearest original point. That is an approximation until a lighting rebake
+    exists.
+  - Export names the modules it rebuilt, and says to link their AI again in Open Inteng where a doorway or a floor moved.
+  - Still refused, by name:
+    - shapes with a door's poses, animation, animated textures, an external bitmap list or a prebuilt header;
+    - shapes shared by several placements;
+    - a module moved as an object;
+    - more than 10000 points.
+
+- **Each imported face says which polygon of the level it came from.** Every face of an imported mesh carries two numbers,
+  `avp_blender_plugin_source_polygon` (its polygon's place in the shape's list, plus 1; a quad's two triangles both carry it) and
+  `avp_blender_plugin_source_shape` (a token of its shape for this import, also on the object as `avp_blender_plugin_shape_token`).
+  Blender carries both through the edits a mapper makes (E on faces and edges, Shift+D, the knife, Alt+J and loop cuts, merges, P
+  and Ctrl+J, a .blend saved and opened again), so an export that rebuilds a reshaped module can give each face its polygon's kind,
+  and a refusal can name the face. 0 means none: a face made from nothing, or an extruded wall on the module's open edge (Blender
+  has no face across that edge to copy from). A module joined in from another import keeps its own token, so it never passes as ours.
 - **Every level imports; what can't be loaded is named, kept and saved unchanged.** A texture or bitmap that isn't
   anywhere no longer stops an import: it gets a magenta placeholder material named after it (`<level>_MISSING_<file>`),
   as the game itself draws such a polygon untextured (`chunk_load.cpp` `copy_to_shapeheader`). A shape or object the

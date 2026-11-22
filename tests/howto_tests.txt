@@ -1,6 +1,22 @@
-Copy & Paste bellow code into Blender script. Update path with your own.
+THE SUITE: copy and paste the code below into Blender's Python console (Scripting). Update the path with your own.
 
 import sys
 sys.path.insert(0, r"<the scripts/addons folder of your Blender user folder>")
-from avp_rif_importer.tests import run_all
+from avp_blender_plugin.tests import run_all
 run_all()
+
+THE SCENE PROOFS: each imports whole levels from a game data folder and runs on its own, one Blender at a time, in the background, with
+a test profile (Blender's BLENDER_USER_* folders pointed at a separate folder, so your own profile is never read or written). The suite
+above does not load them (tests/__init__.py load_tests); tests/test_scene_proofs.py checks that every scene proof is listed here.
+Each one makes its own new proof folder and prints it (PROOF FOLDER <path>; tests/_proof_folder.py): no folder typed on the command
+line is ever written to. When two run at once, give each its own copy of the game data.
+
+  blender -b --factory-startup --python-exit-code 1 --python tests/test_face_baseline.py -- <game data>
+  blender -b --factory-startup --python-exit-code 1 --python tests/test_light_export.py -- <game data>
+  blender -b --factory-startup --python-exit-code 1 --python tests/test_texture_import.py -- <game data>
+  blender -b --factory-startup --python-exit-code 1 --python tests/test_uv_pick_refused.py -- <game data>
+  blender -b --factory-startup --python-exit-code 1 --python tests/test_uv_texture_picker.py -- <game data>
+  blender -b --factory-startup --python-exit-code 1 --python tests/test_whole_shape_export.py -- <game data>
+  blender -b --factory-startup --python-exit-code 1 --python tests/test_whole_shape_round_trip.py -- <game data> --levels Genshd1 Derelict Invasion kens-co-op
+  blender -b --factory-startup --python-exit-code 1 --python tests/test_texture_any_face.py -- <game data>
+  blender -b <a COPY of the owner's kens_co_op .blend> -Y --python-exit-code 1 --python tests/test_his_kens_pick.py
