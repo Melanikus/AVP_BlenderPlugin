@@ -17,7 +17,7 @@ from mathutils import Vector
 
 sys.dont_write_bytecode = True
 args = sys.argv[sys.argv.index("--") + 1:]
-DATA, PROOF = map(Path, args[:2])
+DATA, PROOF = Path(args[0]), Path(args[1])   # spelled out for Snyk Code (red first; the next commit takes no typed proof path)
 WORK = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("avp_blender_plugin", WORK / "__init__.py",
                                             submodule_search_locations=[str(WORK)])
