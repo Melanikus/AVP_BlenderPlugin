@@ -6,6 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A refused texture pick stays on screen and says why.** Picking a level RIM in the UV editor's image drop-down for faces the add-on
+  can't give it to used to flash: the refusal went only to the status bar, and "the UV editor follows the selected face's texture" put the
+  face's own image back half a second later (the owner, 2026-11-22: "it flashes ... and goes back to previous/does not change"). Now the
+  pick stays in the UV editor until another face is selected, and a pop-up says why.
+- **The new-geometry refusals say what in the edit did it.** "New geometry must preserve all original vertices, faces, UVs and
+  materials" and "Append both new vertices and faces; do not remove original geometry" now name the object and count what changed:
+  original vertices gone (welded or deleted), original vertices moved, original faces cut, merged or extruded, a material slot or UVs of
+  original faces changed, faces added with no new vertex. When only moved vertices stand in the way, the refusal gives the two-pass way
+  that keeps the work. The pick and Export say the same words.
+
 ### Added
 
 - **Export the shape as it is.** A module edited the way Blender edits (vertices welded, faces extruded, cut or deleted, a
@@ -24,20 +36,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - shapes shared by several placements;
     - a module moved as an object;
     - more than 10000 points.
-
-### Fixed
-
-- **A refused texture pick stays on screen and says why.** Picking a level RIM in the UV editor's image drop-down for faces the add-on
-  can't give it to used to flash: the refusal went only to the status bar, and "the UV editor follows the selected face's texture" put the
-  face's own image back half a second later (the owner, 2026-11-22: "it flashes ... and goes back to previous/does not change"). Now the
-  pick stays in the UV editor until another face is selected, and a pop-up says why.
-- **The new-geometry refusals say what in the edit did it.** "New geometry must preserve all original vertices, faces, UVs and
-  materials" and "Append both new vertices and faces; do not remove original geometry" now name the object and count what changed:
-  original vertices gone (welded or deleted), original vertices moved, original faces cut, merged or extruded, a material slot or UVs of
-  original faces changed, faces added with no new vertex. When only moved vertices stand in the way, the refusal gives the two-pass way
-  that keeps the work. The pick and Export say the same words.
-
-### Added
 
 - **Each imported face says which polygon of the level it came from.** Every face of an imported mesh carries two numbers,
   `avp_blender_plugin_source_polygon` (its polygon's place in the shape's list, plus 1; a quad's two triangles both carry it) and
