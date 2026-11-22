@@ -31,6 +31,63 @@ def has_additions(mesh, saved):
                  or len(mesh.loops) > counts[3]))
 
 
+def _plural(count, one, many):
+    return f"{count} {one if count == 1 else many}"
+
+
+# The way that works, told with every refusal below: what a module with new faces may and may not have done to its original part
+_PREFIX_RULE = ("AvP export adds new faces only onto an untouched original: original vertices may be moved, but an original vertex may not be "
+                "welded or deleted, and an original face may not be cut, merged, deleted or extruded")
+_TWO_PASSES = ("To keep the work, export it in two passes: select the new faces, P > Selection, delete the avp_blender_plugin entries in the new "
+               "object's Custom Properties and Export; then import that file, select the new object and then the module, Ctrl+J, pick the new "
+               "faces' texture and Export again")
+
+
+def prefix_changes(obj, saved):
+    """What differs in the original part of a module that has new faces, in plain words (empty when nothing does).
+
+    The owner, 2026-11-22: a refused texture pick and a refused Export said only "New geometry must preserve all original vertices, faces,
+    UVs and materials" or "Append both new vertices and faces; do not remove original geometry", which never said what in his edit did it.
+    These are the same checks validate_prefix makes, each one counted or named."""
+    mesh = obj.data
+    counts = saved["mesh_counts"]
+    current = (len(mesh.vertices), len(mesh.edges), len(mesh.polygons), len(mesh.loops))
+    words = []
+    if current[0] < counts[0]:
+        words.append(f"{_plural(counts[0] - current[0], 'of its original vertices is', 'of its original vertices are')} gone (welded or deleted)")
+    if current[2] < counts[2] or current[3] < counts[3] or current[1] < counts[1]:
+        words.append("some of its original faces or edges are gone (deleted, merged or dissolved)")
+    if words:
+        return words
+    added_faces, added_vertices = current[2] - counts[2], current[0] - counts[0]
+    if added_faces > 0 and added_vertices == 0:
+        words.append(f"{_plural(added_faces, 'face was', 'faces were')} added with no new vertex (the export needs at least one new vertex with them)")
+    if added_vertices > 0 and added_faces == 0:
+        words.append(f"{_plural(added_vertices, 'vertex was', 'vertices were')} added with no new face")
+    names = saved.get("material_names")
+    material_count = len(names) if isinstance(names, list) else 0
+    try:
+        original = baseline_coordinates(saved, counts[0], obj.name)
+    except ValueError:
+        original = None   # a damaged baseline: validate_prefix's own check refuses that by name; these words just leave the count out
+    now = coordinate_bytes(mesh)[:counts[0] * 12]
+    moved = 0 if original is None else sum(original[i * 12:i * 12 + 12] != now[i * 12:i * 12 + 12] for i in range(counts[0]))
+    topology = mesh_signature(mesh, include_uv=False, include_material=False, counts=counts) == saved.get("topology_signature")
+    if not topology:
+        words.append("its original faces were changed (cut, merged or extruded)")
+    elif len(mesh.materials) < material_count or mesh_signature(
+            mesh, include_uv=False, counts=counts, material_count=material_count) != saved.get("uv_signature"):
+        words.append("a material slot of its original faces was changed")
+    elif mesh_signature(mesh, counts=counts, material_count=material_count) != saved["signature"]:
+        words.append("UVs of its original faces were changed")
+    if moved and words:
+        words.append(f"{_plural(moved, 'original vertex', 'original vertices')} moved")
+    elif moved:
+        # moving original vertices is allowed on its own; only together with new faces in one export is it refused
+        words.append(f"it has new faces and {_plural(moved, 'original vertex', 'original vertices')} moved")
+    return words
+
+
 def validate_prefix(obj, saved):
     mesh = obj.data
     counts = saved["mesh_counts"]
@@ -39,7 +96,7 @@ def validate_prefix(obj, saved):
     current = (len(mesh.vertices), len(mesh.edges), len(mesh.polygons), len(mesh.loops))
     if (any(now < before for now, before in zip(current, counts))
             or current[0] <= counts[0] or current[2] <= counts[2]):
-        raise ValueError("Append both new vertices and faces; do not remove original geometry")
+        raise ValueError(f"{obj.name}: " + "; ".join(prefix_changes(obj, saved)) + f". {_PREFIX_RULE}")
     names = saved.get("material_names")
     if not isinstance(names, list):
         raise ValueError("Missing original material baseline; re-import the level")
@@ -47,7 +104,10 @@ def validate_prefix(obj, saved):
             or mesh_signature(mesh, counts=counts, material_count=len(names)) != saved["signature"]
             or coordinate_bytes(mesh)[:counts[0] * 12]
             != baseline_coordinates(saved, counts[0], obj.name)):
-        raise ValueError("New geometry must preserve all original vertices, faces, UVs and materials")
+        changes = prefix_changes(obj, saved) or ["its original part differs from the import"]
+        moved_only = len(changes) == 1 and changes[0].startswith("it has new faces and ")
+        raise ValueError(f"{obj.name}: " + "; ".join(changes) + ". "
+                         + (f"One export can't save both. {_TWO_PASSES}" if moved_only else _PREFIX_RULE))
     if (obj.data.shape_keys is not None
             or [value for row in obj.matrix_world for value in row] != saved["matrix"]
             or [[m.name, m.type] for m in obj.modifiers] != saved["modifiers"]):
