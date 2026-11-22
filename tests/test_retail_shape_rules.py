@@ -29,7 +29,7 @@ def polygon(kind, normal, colour, corners):
 POINTS = [(0, 0, 0), (10, 0, 0), (10, 10, 0), (0, 10, 0)]
 
 
-def build(points=POINTS, polys=None, header=None, uv=((3, 3)), merge=(1, 0), tint=None, extra=b""):
+def build(points=POINTS, polys=None, header=None, uv=((3, 3)), merge=(1, 0), tint=None, extra=b"", light=b"NORMALLT", first=b""):
     polys = polys if polys is not None else [polygon(5, 0, 0 << 16, (0, 1, 2)), polygon(5, 1, 1 << 16, (0, 2, 3))]
     lists = b"".join(struct.pack("<i", n) + b"\0" * 8 * n for n in uv)
     parts = [chunk("SHPHEAD1", header if header is not None else head(len(points), len(polys))),
@@ -38,10 +38,10 @@ def build(points=POINTS, polys=None, header=None, uv=((3, 3)), merge=(1, 0), tin
              chunk("SHPUVCRD", struct.pack("<i", len(uv)) + lists)]
     if merge is not None:
         parts.append(chunk("SHPMRGDT", b"".join(struct.pack("<i", m) for m in merge)))
-    shape = chunk("REBSHAPE", b"".join(parts) + extra)
+    shape = chunk("REBSHAPE", first + b"".join(parts) + extra)
     count = len(points) if tint is None else tint[0]
     colours = len(points) if tint is None else tint[1]
-    obj = chunk("RBOBJECT", chunk("SHPVTINT", b"default\0" + struct.pack("<ii", 0, count) + b"\0" * 4 * colours))
+    obj = chunk("RBOBJECT", chunk("SHPVTINT", light.ljust(8, b"\0") + struct.pack("<ii", 0, count) + b"\0" * 4 * colours))
     return shape, obj
 
 
@@ -52,6 +52,17 @@ class RetailRules(unittest.TestCase):
 
     def test_a_shape_the_retail_loader_takes_passes(self):
         self.assertEqual(check_module(*build()), [])
+        # as 36 stock modules are: a SHPCENTR (or SHPMORPH) before the header, which still comes before the points and polygons
+        self.assertEqual(check_module(*build(first=chunk("SHPCENTR", b"\0" * 12))), [])
+        # a light set other than NORMALLT, kept as the source has it
+        shape, obj = build(light=b"OTHERSET")
+        self.assertEqual(check_module(shape, obj, obj), [])
+
+    def test_rule_2_light_set_as_the_source(self):
+        shape, obj = build(light=b"OTHERSET")
+        _, source = build()
+        problems = check_module(shape, obj, source)
+        self.assertTrue(any(p.startswith("rule 2") and "not the source's" in p for p in problems), problems)
 
     def test_rule_1_corners(self):
         self.broken("rule 1", polys=[polygon(5, 0, 0, (0, 1, 2, 3, 0)), polygon(5, 1, 1 << 16, (0, 2, 3))])   # 5 corners, no -1
@@ -60,6 +71,7 @@ class RetailRules(unittest.TestCase):
     def test_rule_2_colours(self):
         self.broken("rule 2", tint=(3, 3))   # 3 colours for 4 points
         self.broken("rule 2", tint=(4, 3))   # counts 4, holds 3
+        self.broken("rule 2", light=b"default")   # a light set the retail game doesn't read (Frost)
 
     def test_rule_3_merge_pairs(self):
         self.broken("rule 3", merge=(1, 1))        # polygon 1 names itself, not polygon 0, so 0's pair doesn't point back
@@ -76,6 +88,7 @@ class RetailRules(unittest.TestCase):
         self.broken("rule 5", uv=(2, 3))                                                                       # 2 UV corners for 3
 
     def test_rule_6_header(self):
+        self.broken("rule 6", first=chunk("SHPRAWVT", b""))                                        # points before the header (Frost, Vasquez)
         self.broken("rule 6", header=head(5, 2))                                                   # 5 points said, 4 held
         self.broken("rule 6", header=head(4, 3))                                                   # 3 polygons said, 2 held
         self.broken("rule 6", header=head(4, 2, box=(5, -100, 100, -100, 100, -100)))             # a point past max.x

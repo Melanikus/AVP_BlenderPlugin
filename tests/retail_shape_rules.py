@@ -6,13 +6,16 @@ a shape the retail loader can take. The layouts are the game's own readers (avpx
 Shape_Merge_Data_Chunk, chunk_light.cpp's Shape_Vertex_Intensities_Chunk; the polygon and UV records as geometry.py reads them).
 
   1. SHPPOLYS: every polygon has 3 or 4 corners, then -1; each corner is 0 or more and below the SHPRAWVT count.
-  2. SHPVTINT (each, on the module's object): its count equals the SHPRAWVT count, and its payload holds exactly that many colours.
+  2. SHPVTINT (each, on the module's object): its count equals the SHPRAWVT count, and its payload holds exactly that many colours; its
+     light-set name is the source's (in order), or NORMALLT for a module with no source (retail bakes light only for NORMALLT, 0x4cf319).
   3. SHPMRGDT, if present: one entry per polygon; each -1 or a partner whose own entry points back; both partners triangles sharing
-     exactly 2 corners.
-  4. No SHPPRPRO in the shape (a prebuilt header the pin doesn't read at all).
+     exactly 2 corners. (Memory safety, not only looks: an unpaired entry overruns retail's polygon array by 36 bytes, 0x45bc42.)
+  4. No SHPPRPRO in the shape (retail builds the shape from it instead of the polygons; the pin doesn't read it at all).
   5. Every textured polygon (type 5, 6, 7, 21 to 25): colour bit 0x8000 clear; its UV list (colour >> 16) exists in SHPUVCRD with at least
-     as many corners as the polygon has.
-  6. SHPHEAD1: its point and polygon counts equal the payloads'; every point lies within its box; every polygon's normal index is in range.
+     as many corners as the polygon has. (A list number past the count is an out-of-bounds write in retail, 0x45e764.)
+  6. SHPHEAD1: comes before SHPRAWVT and SHPPOLYS (retail sets the counts from all three, the last read winning, FUN_004ddfe0); its point
+     and polygon counts equal the payloads'; every point lies within its box; every polygon's normal index is in range.
+The retail addresses: Frost, from Rebellion's AvP_Classic.exe (sha256 6443ab08), AvP-docs/review/blendavp-game-reads-by-number.md.
 """
 
 import struct
@@ -37,9 +40,15 @@ def children(chunk):
     return out, problems
 
 
-def check_module(shape_chunk, object_chunk):
+def check_module(shape_chunk, object_chunk, source_object_chunk=None):
+    """source_object_chunk: the module's object chunk in the SOURCE, when there is one: each SHPVTINT's light-set name must then be the
+    source's, in order (Vasquez 11-22; retail bakes light only for the set named NORMALLT, 0x4cf319); with none, each must be NORMALLT."""
     shape, problems = children(shape_chunk)
     obj, object_problems = children(object_chunk)
+    source_sets = None
+    if source_object_chunk is not None:
+        source_sets = [payload[:8].split(b"\0")[0].decode("latin-1") for ident, payload in children(source_object_chunk)[0]
+                       if ident == "SHPVTINT" and len(payload) >= 8]
     problems += object_problems
     by = {}
     for ident, payload in shape:
@@ -47,6 +56,12 @@ def check_module(shape_chunk, object_chunk):
 
     if "SHPPRPRO" in by:
         problems.append("rule 4: the shape holds SHPPRPRO")
+    # 6 (Frost and Vasquez, from retail's own loader, FUN_004ddfe0): retail sets the shape's counts from SHPHEAD1 AND from the SHPRAWVT and
+    # SHPPOLYS readers, the last read winning, so SHPHEAD1 must come BEFORE both. Not "first": 36 stock modules of Genshd1, Derelict,
+    # Invasion and kens-co-op begin with SHPCENTR (14) or SHPMORPH (22), and the game loads them (measured 11-22)
+    order = [ident for ident, _ in shape]
+    if "SHPHEAD1" in order and any(name in order and order.index(name) < order.index("SHPHEAD1") for name in ("SHPRAWVT", "SHPPOLYS")):
+        problems.append(f"rule 6: SHPHEAD1 comes after SHPRAWVT or SHPPOLYS ({' '.join(order)})")
     head = by.get("SHPHEAD1", [None])[0]
     raw = by.get("SHPRAWVT", [b""])[0]
     polys_raw = by.get("SHPPOLYS", [b""])[0]
@@ -122,6 +137,7 @@ def check_module(shape_chunk, object_chunk):
                 problems.append(f"rule 3: polygons {i} and {partner} are not two triangles sharing exactly 2 corners")
 
     # 2: each light set's colours, on the module's object
+    written_sets = []
     for ident, payload in obj:
         if ident != "SHPVTINT":
             continue
@@ -129,6 +145,12 @@ def check_module(shape_chunk, object_chunk):
             problems.append("rule 2: a SHPVTINT under 16 bytes")
             continue
         count = struct.unpack_from("<i", payload, 12)[0]
+        light_set = payload[:8].split(b"\0")[0].decode("latin-1")
+        written_sets.append(light_set)
+        if source_sets is None and light_set != "NORMALLT":   # (Frost: the light set retail reads)
+            problems.append(f"rule 2: a SHPVTINT's light set is {light_set!r}, not 'NORMALLT'")
         if count != len(points) or len(payload) != 16 + 4 * count:
             problems.append(f"rule 2: SHPVTINT counts {count} colours in {(len(payload) - 16) / 4:g} for {len(points)} points")
+    if source_sets is not None and written_sets != source_sets:
+        problems.append(f"rule 2: the SHPVTINT light sets {written_sets} are not the source's {source_sets}")
     return problems
