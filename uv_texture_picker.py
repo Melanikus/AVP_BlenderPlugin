@@ -2,6 +2,8 @@
 
 """UV-editor entry points for the existing whole-source-polygon RIM picker."""
 
+import textwrap
+
 import bmesh
 import bpy
 
@@ -15,6 +17,39 @@ from .utils import log
 _subscription_owner = object()
 _editor_images = {}
 _following_editors = set()
+# A drop-down pick the add-on REFUSED, kept on screen: space pointer -> (the picked image's pointer, the active face then). The owner,
+# 2026-11-22: "it flashes ... and goes back to previous/does not change": the refusal's words went only to the status bar, and the follow
+# timer below put the face's own image back 0.1 s later. Now the pick stays, a pop-up says why, and following resumes once another face is active.
+_held_picks = {}
+
+
+def _active_face_key(context):
+    """The active face of the object in Edit Mode, as (object name, face index), or None outside Edit Mode."""
+    obj = context.object
+    if obj is None or obj.type != 'MESH' or context.mode != 'EDIT_MESH':
+        return None
+    face = bmesh.from_edit_mesh(obj.data).faces.active
+    return (obj.name, face.index if face is not None else -1)
+
+
+def _refusal_words(error):
+    """An operator's ERROR report as Blender raises it ("Error: <words>" per report), as plain sentences."""
+    lines = [line.strip() for line in str(error).splitlines() if line.strip()]
+    return " ".join(line[len("Error:"):].strip() if line.startswith("Error:") else line for line in lines)
+
+
+def _tell(title, words):
+    """A pop-up under the pointer with the words, wrapped to lines a pop-up can show. A run without a window (background) has none to show."""
+    window_manager = bpy.context.window_manager
+    if bpy.app.background or window_manager is None or not window_manager.windows:
+        return
+    lines = textwrap.wrap(words, 100) or [words]
+
+    def draw(menu, _context):
+        for line in lines:
+            menu.layout.label(text=line)
+
+    window_manager.popup_menu(draw, title=title, icon='ERROR')
 
 
 def follow_active_face(context):
@@ -25,6 +60,11 @@ def follow_active_face(context):
             or obj is None or obj.type != 'MESH'
             or not obj.get("avp_blender_plugin_source_text")):
         return False
+    held = _held_picks.get(space.as_pointer())
+    if held is not None:
+        if space.image is not None and held == (space.image.as_pointer(), _active_face_key(context)):
+            return False   # a refused pick stays on screen until another face is active, or another image is picked
+        _held_picks.pop(space.as_pointer(), None)
     mesh = bmesh.from_edit_mesh(obj.data)
     face = mesh.faces.active
     if face is None or not face.select or face.hide or face.material_index >= len(obj.data.materials):
@@ -139,13 +179,18 @@ def _image_changed():
             try:
                 bpy.ops.avp_blender_plugin.uv_pick_texture('EXEC_DEFAULT', from_dropdown=True)
             except RuntimeError as error:
-                # Blender raises for an operator's ERROR report; that operator already logged and reported it.
+                # Blender raises for an operator's ERROR report; that operator already logged and reported it. The pick stays on screen
+                # (follow_active_face leaves it while this face is active) and a pop-up says why, where it can't be missed
                 log.error("UV image drop-down assignment: %s", error)
+                _held_picks[key] = (image, _active_face_key(bpy.context))
+                _tell("The texture was not assigned",
+                      _refusal_words(error) + " (The UV editor keeps showing your pick until another face is selected.)")
 
 
 def start():
     bpy.msgbus.clear_by_owner(_subscription_owner)
     _editor_images.clear()
+    _held_picks.clear()
     _remember_editors()
     bpy.msgbus.subscribe_rna(key=(bpy.types.SpaceImageEditor, "image"),
                             owner=_subscription_owner, args=(), notify=_image_changed)
@@ -159,6 +204,7 @@ def stop():
         bpy.app.timers.unregister(_remember_editors)
     _editor_images.clear()
     _following_editors.clear()
+    _held_picks.clear()
 
 
 class AVP_BLENDER_PLUGIN_OT_load_uv_textures(bpy.types.Operator):
