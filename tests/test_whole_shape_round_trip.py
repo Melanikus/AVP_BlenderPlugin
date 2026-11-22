@@ -79,7 +79,7 @@ def compare_level(scene, text, only_unchanged):
     placements = record.get("placements", {})
     result = {"level": Path(record.get("filepath", text.name)).stem, "modules": 0, "compared": 0, "identical": 0,
               "refused": [], "changed_not_compared": [], "different": [], "rules_broken": [], "rules_checked": 0,
-              "source_rules_broken": []}
+              "source_rules_broken": [], "rules_refused": []}
     modules = []
     for obj in sorted(scene.objects, key=lambda o: o.name):
         if (obj.type != 'MESH' or obj.get("avp_blender_plugin_source_text") != text.name
@@ -107,8 +107,8 @@ def compare_level(scene, text, only_unchanged):
                 broken = check_module(*written, rebuild_tree(raw, node))   # the light sets must be the source's
                 if broken:
                     result["rules_broken"].append({"module": obj.name, "problems": broken[:6]})
-            except ValueError:
-                pass
+            except ValueError as error:   # counted, never silent: a changed module refused is the case P2 is about
+                result["rules_refused"].append({"module": obj.name, "why": str(error)})
             except Exception as error:
                 result["rules_broken"].append({"module": obj.name, "problems": [f"{type(error).__name__}: {error}"]})
         saved = placements.get(str(node.offset), {})
@@ -175,10 +175,13 @@ class WholeShapeRoundTrip(unittest.TestCase):
                 print(f"  DIFFERENT {d}")
             for d in r["refused"][:12]:
                 print(f"  REFUSED {d}")
-            print(f"RETAIL RULES {r['level']}: {r['rules_checked']} shapes written and checked, {len(r['rules_broken'])} break a rule"
+            print(f"RETAIL RULES {r['level']}: {r['rules_checked']} shapes written and checked, {len(r['rules_broken'])} break a rule, "
+                  f"{len(r['rules_refused'])} refused by the writer"
                   + (f"; on the SOURCE bytes {len(r['source_rules_broken'])} of {r['modules']} modules break one" if RULES_ON_SOURCE else ""))
             for d in (r["rules_broken"] + r["source_rules_broken"])[:12]:
                 print(f"  RULE {d}")
+            for d in r["rules_refused"][:12]:
+                print(f"  NOT WRITTEN {d}")
 
     def test_some_level_was_read(self):
         self.assertTrue(self.results, "no level was imported or found in the opened file")
