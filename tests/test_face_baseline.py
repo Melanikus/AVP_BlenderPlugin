@@ -11,7 +11,7 @@ a new face takes a neighbour's values, and only a face made from nothing gets 0.
 an edge), Shift+D, a knife cut, a loop cut, a merge, P and Ctrl+J, another import's module joined in, a face added from nothing, and a
 .blend saved and opened again.
 
-Run headlessly with -- <game-data-folder> <proof-folder>, as tests/test_uv_pick_refused.py (Vasquez's runner, test-blender52.sh, his
+Run headlessly with -- <game-data-folder> (it writes only into its own new folder, printed as PROOF FOLDER <path>), as tests/test_uv_pick_refused.py (Vasquez's runner, test-blender52.sh, his
 installed Blender with every user folder pointed at our test profile).
 """
 
@@ -25,7 +25,11 @@ import bpy
 
 sys.dont_write_bytecode = True
 args = sys.argv[sys.argv.index("--") + 1:]
-DATA, PROOF = map(Path, args[:2])
+sys.path.insert(0, str(Path(__file__).resolve().parent))   # tests/: the proof folder helper
+from _proof_folder import no_typed_proof_folder, proof_folder
+no_typed_proof_folder(args, "-- <game-data-folder>")
+DATA = Path(args[0])   # the game's data: only read
+PROOF = proof_folder("face-baseline")   # its own folder, printed: nothing typed is ever written to (tests/_proof_folder.py)
 WORK = Path(globals().get("addon_folder", Path(__file__).resolve().parents[1]))
 spec = importlib.util.spec_from_file_location("avp_blender_plugin", WORK / "__init__.py",
                                             submodule_search_locations=[str(WORK)])
