@@ -5,7 +5,7 @@ texture in the picker, it flashes (not on viewport, just on UV mode on bottom) a
 showed why: the UV image drop-down's pick was refused ("New geometry must preserve all original vertices, faces, UVs and materials"), the
 words went only to the status bar, and 0.1 s later "the UV editor follows the selected face's texture" put the face's own image back.
 
-Run headlessly with -- <game-data-folder> <proof-folder>. The msgbus callback is dispatched explicitly (background Blender has no event loop),
+Run headlessly with -- <game-data-folder> (it writes into its own proof folder, printed as PROOF FOLDER <path>). The msgbus callback is dispatched explicitly (background Blender has no event loop),
 as tests/test_uv_texture_picker.py does.
 """
 
@@ -20,7 +20,11 @@ import bpy
 
 sys.dont_write_bytecode = True
 args = sys.argv[sys.argv.index("--") + 1:]
-DATA, PROOF = map(Path, args[:2])
+sys.path.insert(0, str(Path(__file__).resolve().parent))   # tests/: the proof folder helper
+from _proof_folder import no_typed_proof_folder, proof_folder
+no_typed_proof_folder(args, "-- <game-data-folder>")
+DATA = Path(args[0])   # the game's data: only read
+PROOF = proof_folder("uv-pick-refused")   # its own folder, printed: nothing typed is ever written to (tests/_proof_folder.py)
 WORK = Path(globals().get("addon_folder", Path(__file__).resolve().parents[1]))
 spec = importlib.util.spec_from_file_location("avp_blender_plugin", WORK / "__init__.py",
                                             submodule_search_locations=[str(WORK)])

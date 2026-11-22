@@ -5,13 +5,13 @@ REBSHAPE bytes, byte for byte. That is the strongest guard the new writer can ha
 it went in, so a level exported with no change is the level it was.
 
 Two ways to run it, each headless on the test profile (Blender with every BLENDER_USER_* folder pointed at a separate test profile, -b --factory-startup ...):
-  --python <this> -- <game-data-folder> <proof-folder> --levels Genshd1 Derelict Invasion kens-co-op
+  --python <this> -- <game-data-folder> --levels Genshd1 Derelict Invasion kens-co-op
       each level imported from <game-data-folder>\\avp_rifs\\<name>.RIF with the add-on's own importer, then EVERY module compared;
-  <a COPY of a saved .blend> -Y --python <this> -- <game-data-folder> <proof-folder> --opened
+  <a COPY of a saved .blend> -Y --python <this> -- <game-data-folder> --opened
       the levels the opened file holds (his kens-co-op, scripts off): every module whose mesh still matches its import-time signature is
       compared; the changed ones are only named (proof/changed-modules.txt), as the writer has no source bytes to give back for them.
 
-What it says, in <proof-folder>/round-trip.json and on the console: per level, the modules compared, how many came back identical, and for
+What it says, in round-trip.json in its own proof folder (printed as PROOF FOLDER <path>; nothing typed is written to) and on the console: per level, the modules compared, how many came back identical, and for
 each that didn't, the first byte that differs: which of the shape's own chunks holds it (SHPHEAD1, SHPRAWVT, SHPPOLYS, ...) and where.
 RED until whole_shape.py exists (every module FAILS with the reason). The add-on is loaded from this tree by importlib, as the other proofs do.
 """
@@ -26,10 +26,17 @@ import bpy
 
 sys.dont_write_bytecode = True
 args = sys.argv[sys.argv.index("--") + 1:]
-DATA, PROOF = Path(args[0]), Path(args[1])
+sys.path.insert(0, str(Path(__file__).resolve().parent))   # tests/: the proof folder helper and the retail rules
+from _proof_folder import no_typed_proof_folder, proof_folder
+no_typed_proof_folder(args, "-- <game-data-folder> (--levels <name> ... | --opened) [--rules-on-source]")
+DATA = Path(args[0])   # the game's data: only read
+PROOF = proof_folder("whole-shape-round-trip")   # its own folder, printed: nothing typed is ever written to (tests/_proof_folder.py)
 OPENED = "--opened" in args
 RULES_ON_SOURCE = "--rules-on-source" in args   # a measurement: the retail rules over the source's own bytes
 LEVELS = [a for a in args[args.index("--levels") + 1:] if not a.startswith("--")] if "--levels" in args else []
+# a level is named by plain letters, digits, _ and - only (it becomes <data>\avp_rifs\<name>.RIF): anything else is refused, never read
+if any(not (1 <= len(level) <= 40 and all(c.isascii() and (c.isalnum() or c in "_-") for c in level)) for level in LEVELS):
+    raise SystemExit(f"a level name is letters, digits, _ and - only: {LEVELS}")
 WORK = Path(globals().get("addon_folder", Path(__file__).resolve().parents[1]))
 spec = importlib.util.spec_from_file_location("avp_blender_plugin", WORK / "__init__.py",
                                             submodule_search_locations=[str(WORK)])
@@ -42,7 +49,6 @@ from avp_blender_plugin.avp_fields import classify
 from avp_blender_plugin.raw_rif import rebuild_tree, source_from_text, walk_tree
 from avp_blender_plugin.vertex_export import mesh_signature
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
 from retail_shape_rules import check_module   # what the retail exe needs of a shape (pure Python, this folder)
 
 try:
@@ -151,7 +157,6 @@ def compare_level(scene, text, only_unchanged):
 class WholeShapeRoundTrip(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        PROOF.mkdir(parents=True, exist_ok=True)
         scene = bpy.context.scene
         texts = []
         if OPENED:
