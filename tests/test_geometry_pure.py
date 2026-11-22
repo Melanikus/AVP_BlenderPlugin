@@ -55,24 +55,21 @@ class TestPolyUvIndex(unittest.TestCase):
         # 0x00050000 -> 5
         self.assertEqual(self.f(0x00050000), 5)
 
-    def test_flagged_path_recombines_low_and_high(self):
-        # With the 0x0000F000 nibble set, decoder expands it:
-        #   idx = ((poly & 0xF000) << 4) | (poly >> 16)
-        # 0xF000 << 4 = 0xF0000, so hi nibble N ends up at bits 16..19.
-        # For poly = 0x00035000: hi nibble = 0x5, poly>>16 = 0x3
-        #   idx = (0x5 << 16) | 0x3 = 0x50003 = 327683.
-        poly = 0x00035000
-        self.assertEqual(self.f(poly), 0x50003)
+    # Corrected 2026-11-22 (Frost, card 2e): these expected an older decoder (a "0xF000 nibble recombine" and an unsigned read) that the
+    # game never had. The game reads a textured polygon's UV list as the SIGNED top half of its colour, (int)colour >> 16, and its texture
+    # as colour & 0x7FFF (avpx 0de2af86 chunk_shape.cpp:303-333 texture_numbers_are_valid; Rebellion's AvP_Classic.exe FUN_0045e170
+    # 0x45e6d9-0x45e6de). geometry.uv_index_from_poly has read it that way since 1.3.74, and the import refuses a list that isn't real,
+    # a negative one included ("invalid UV reference", geometry.py:271-272), as AvPx's loader does.
+    def test_low_bits_are_the_texture_not_the_list(self):
+        # 0x5000 is in the texture number (colour & 0x7FFF); the list is the top half only
+        self.assertEqual(self.f(0x00035000), 0x0003)
 
     def test_flagged_path_zero_hi_nibble_does_not_trigger_flag(self):
-        # 0x0000F000 mask is zero when the hi nibble is zero, so we fall
-        # through to the simple >> 16 branch even if other bits are set.
         self.assertEqual(self.f(0x00030000), 0x0003)
 
-    def test_unsigned_not_negative(self):
-        # Bit 31 must NOT make the index negative.
-        result = self.f(0x80000000)
-        self.assertGreaterEqual(result, 0)
+    def test_top_bit_reads_negative_as_the_game_reads_it(self):
+        # (int)0x80000000 >> 16 is -32768 in the game too; such a list is never real, and the import refuses it by name
+        self.assertEqual(self.f(0x80000000), -32768)
 
 
 @unittest.skipUnless(_HAS_BPY, "geometry.py requires bpy (run inside Blender)")
