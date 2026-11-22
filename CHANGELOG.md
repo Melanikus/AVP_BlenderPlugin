@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A texture pick on a reshaped module goes on the faces you selected, original or new.** On a module whose shape changed (faces
+  cut, merged or extruded, an original point gone, new faces added), the texture picker and the UV editor's image drop-down used to
+  refuse a pick on an original face ("Select only new faces", "New geometry must preserve ..."; the owner, 2026-11-22, on kens_co_op's
+  bunker entrance). Such a module is now rebuilt from its faces on Export, so a pick gives the picked level RIM to exactly the selected
+  faces, as their material, even a face that was a flat colour, and the UV editor keeps showing it. A module still of its imported shape
+  keeps the exact way: whole polygons, their texels kept.
 - **A refused texture pick stays on screen and says why.** Picking a level RIM in the UV editor's image drop-down for faces the add-on
   can't give it to used to flash: the refusal went only to the status bar, and "the UV editor follows the selected face's texture" put the
   face's own image back half a second later (the owner, 2026-11-22: "it flashes ... and goes back to previous/does not change"). Now the
