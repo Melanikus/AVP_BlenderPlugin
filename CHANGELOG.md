@@ -6,23 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- **A texture pick on a reshaped module goes on the faces you selected, original or new.** On a module whose shape changed (faces
-  cut, merged or extruded, an original point gone, new faces added), the texture picker and the UV editor's image drop-down used to
-  refuse a pick on an original face ("Select only new faces", "New geometry must preserve ..."; the owner, 2026-11-22, on kens_co_op's
-  bunker entrance). Such a module is now rebuilt from its faces on Export, so a pick gives the picked level RIM to exactly the selected
-  faces, as their material, even a face that was a flat colour, and the UV editor keeps showing it. A module still of its imported shape
-  keeps the exact way: whole polygons, their texels kept.
-- **A refused texture pick stays on screen and says why.** Picking a level RIM in the UV editor's image drop-down for faces the add-on
-  can't give it to used to flash: the refusal went only to the status bar, and "the UV editor follows the selected face's texture" put the
-  face's own image back half a second later (the owner, 2026-11-22: "it flashes ... and goes back to previous/does not change"). Now the
-  pick stays in the UV editor until another face is selected, and a pop-up says why.
-- **The new-geometry refusals say what in the edit did it.** "New geometry must preserve all original vertices, faces, UVs and
-  materials" and "Append both new vertices and faces; do not remove original geometry" now name the object and count what changed:
-  original vertices gone (welded or deleted), original vertices moved, original faces cut, merged or extruded, a material slot or UVs of
-  original faces changed, faces added with no new vertex. When only moved vertices stand in the way, the refusal gives the two-pass way
-  that keeps the work. The pick and Export say the same words.
+## [1.0.0-alpha.5] - 2026-11-22
 
 ### Added
 
@@ -50,6 +34,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and Ctrl+J, a .blend saved and opened again), so an export that rebuilds a reshaped module can give each face its polygon's kind,
   and a refusal can name the face. 0 means none: a face made from nothing, or an extruded wall on the module's open edge (Blender
   has no face across that edge to copy from). A module joined in from another import keeps its own token, so it never passes as ours.
+
+### Fixed
+
+- **A texture pick on a reshaped module goes on the faces you selected, original or new.** On a module whose shape changed (faces
+  cut, merged or extruded, an original point gone, new faces added), the texture picker and the UV editor's image drop-down used to
+  refuse a pick on an original face ("Select only new faces", "New geometry must preserve ..."; the owner, 2026-11-22, on kens_co_op's
+  bunker entrance). Such a module is now rebuilt from its faces on Export, so a pick gives the picked level RIM to exactly the selected
+  faces, as their material, even a face that was a flat colour, and the UV editor keeps showing it. A module still of its imported shape
+  keeps the exact way: whole polygons, their texels kept.
+
+- **A refused texture pick stays on screen and says why.** Picking a level RIM in the UV editor's image drop-down for faces the add-on
+  can't give it to used to flash: the refusal went only to the status bar, and "the UV editor follows the selected face's texture" put the
+  face's own image back half a second later (the owner, 2026-11-22: "it flashes ... and goes back to previous/does not change"). Now the
+  pick stays in the UV editor until another face is selected, and a pop-up says why.
+
+- **The new-geometry refusals say what in the edit did it.** "New geometry must preserve all original vertices, faces, UVs and
+  materials" and "Append both new vertices and faces; do not remove original geometry" now name the object and count what changed:
+  original vertices gone (welded or deleted), original vertices moved, original faces cut, merged or extruded, a material slot or UVs of
+  original faces changed, faces added with no new vertex. When only moved vertices stand in the way, the refusal gives the two-pass way
+  that keeps the work. The pick and Export say the same words.
+
+## [1.0.0-alpha.0 to 1.0.0-alpha.4] - up to 2026-11-17
+
+The alpha releases before 1.0.0-alpha.5 had no section of their own; what they changed since 1.3.2 is below.
+
+### Added
+
 - **Every level imports; what can't be loaded is named, kept and saved unchanged.** A texture or bitmap that isn't
   anywhere no longer stops an import: it gets a magenta placeholder material named after it (`<level>_MISSING_<file>`),
   as the game itself draws such a polygon untextured (`chunk_load.cpp` `copy_to_shapeheader`). A shape or object the
@@ -58,6 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `<level>-import-log.txt` beside the level. The level's own bytes for all of them are copied through unchanged on
   export, an edit never touches them, and an export that would make a readable part unreadable is refused. All 63 stock
   levels import (19 did not on alpha.3).
+
 - **Linked shape RIFs are followed.** The new **Shape RIFs** import option, and by default the game data's or Steam's
   `Tools\shape_rifs`, supply the bitmaps of a level's linked pickup and weapon shapes (such as `SADAR.rif`). The level's
   own copy of the shape is still what is drawn and saved.
@@ -70,19 +82,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in both. **AvP Door Poses** switches between the poses and plays the door between the two meshes as they are now, in
   the straight line the game uses. Only modules get poses: the game never opens a placed object (stock: 760 morph
   shapes in 63 levels, one of them on a placed platform lift, odobenus `DoorLift01`).
+
 - **Make a door from a module.** A copy of a module named `<module>_MORPH`, with the same vertices moved to where the
   door is closed, exports as the module's morph data: one SUBSHAPE and a FRMMORPH from open to closed, laid out as the
   stock doors have them. With no strategy the game makes it a proximity door (`object_setup.cpp`
   `deal_with_module_object`).
+
 - **A log file for every Blender session.** In the extension's own user folder (`logs`, made by Blender for the add-on), one
   `session-<date>-<time>-<id>.log` per Blender session holds, with the time of each line, every message an operator showed
   you, every warning and error the add-on logged, and the traceback of any operator that failed with an error nobody
   caught. Lines are cleaned of control characters, the file stops at 5 MB, a repeating message is written at 1, 10, 100, ...
   times, and the newest 20 session files are kept. The AvP Level Settings panel shows where the file is.
+
 - **One export takes a texture pick, UV moves and a vertex move together.** A RIM texture pick, UV moves on any polygon
   (the picked ones included; they are kept in the new image's space) and a vertex move used to be refused as "export
   separately". They write different bytes, so one export now takes all of them. Picking a texture after moving UVs keeps
   the moves. New geometry is still exported on its own.
+
 - **Recentre Shape (the old editor's Shape > Recentre Shape).** On an AvP Module's panel, Bottom / Middle / Top moves the
   object's origin to that point over the middle of the module's box; the shape stays where it is. Export then writes the new
   centre: the object's position becomes that point and every vertex, the extents, the radius and the stored centre move the
@@ -94,6 +110,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `LIFT01` hold a `LIST MIPM` after the picture. The decoder refused the whole level ("Invalid ILBM container"); like
   the game's RIM reader (`RimLoader.cpp`), it now reads up to the picture's `BODY` and stops there. A mip-map record
   before the picture is still refused, and a mapper's own RIM is still checked whole.
+
 - **Editing goes on after a successful export, without a re-import.** An export compared the objects with a snapshot taken
   at import, so the next edit of another kind was refused until the level was imported again. After a successful export the
   snapshot is now taken again from what was saved (a vertex move, UV moves and texture picks). Exporting new geometry
